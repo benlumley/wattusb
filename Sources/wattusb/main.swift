@@ -10,6 +10,10 @@ struct Reading {
     let adapterWatts: Int
     let adapterVolts: Double
     let adapterAmps: Double
+    let batteryPercent: Int
+    let chargeWatts: Double       // power into the battery cells (when plugged)
+    let dischargeWatts: Double    // power out of the battery (when on battery)
+    let timeToFullMinutes: Int    // also serves as time-to-empty when unplugged
 }
 
 func readBattery() -> Reading? {
@@ -35,6 +39,16 @@ func readBattery() -> Reading? {
     let adapterMV = adapter["AdapterVoltage"] as? Int ?? 0
     let adapterMA = adapter["Current"] as? Int ?? 0
 
+    let percent = prop("CurrentCapacity") as? Int ?? 0
+
+    // Amperage is signed: positive = charging (into cells), negative = discharging.
+    let batteryVoltMV = prop("Voltage") as? Int ?? 0
+    let amperageMA = prop("Amperage") as? Int ?? 0
+    let chargeMW = max(0, batteryVoltMV * amperageMA) / 1000
+    let dischargeMW = max(0, batteryVoltMV * -amperageMA) / 1000
+
+    let timeToFull = prop("TimeRemaining") as? Int ?? 0
+
     return Reading(
         plugged: plugged,
         charging: charging,
@@ -43,8 +57,19 @@ func readBattery() -> Reading? {
         ampsIn: Double(currentInMA) / 1000.0,
         adapterWatts: adapterWatts,
         adapterVolts: Double(adapterMV) / 1000.0,
-        adapterAmps: Double(adapterMA) / 1000.0
+        adapterAmps: Double(adapterMA) / 1000.0,
+        batteryPercent: percent,
+        chargeWatts: Double(chargeMW) / 1000.0,
+        dischargeWatts: Double(dischargeMW) / 1000.0,
+        timeToFullMinutes: timeToFull
     )
+}
+
+func formatTime(_ minutes: Int) -> String {
+    let h = minutes / 60
+    let m = minutes % 60
+    if h > 0 { return "\(h)h \(m)m" }
+    return "\(m)m"
 }
 
 @MainActor
@@ -54,7 +79,6 @@ final class App: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         item.menu = NSMenu()
-        item.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 0, weight: .regular)
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
             Task { @MainActor in self.refresh() }
@@ -65,25 +89,58 @@ final class App: NSObject, NSApplicationDelegate {
         let r = readBattery()
         let menu = NSMenu()
 
-        guard let r, r.plugged else {
-            item.button?.title = "—"
-            menu.addItem(labelItem("Not plugged in"))
+        guard let r else {
+            setStatusTitle("—")
+            menu.addItem(labelItem("No battery data"))
             menu.addItem(.separator())
             menu.addItem(quitItem())
             item.menu = menu
             return
         }
 
-        item.button?.title = "\(Int(r.drawWatts.rounded()))W"
+        if r.plugged {
+            setStatusTitle("\(Int(r.drawWatts.rounded()))W")
 
-        menu.addItem(labelItem(String(format: "Drawing:  %dW (%.1fV · %.2fA)",
-                                       Int(r.drawWatts.rounded()), r.voltsIn, r.ampsIn)))
-        menu.addItem(labelItem(String(format: "Adapter:  %dW max (%.0fV · %.0fA PD)",
-                                       r.adapterWatts, r.adapterVolts, r.adapterAmps)))
-        menu.addItem(labelItem("Charging: \(r.charging ? "Yes" : "No")"))
+            let systemWatts = max(0, r.drawWatts - r.chargeWatts)
+            menu.addItem(labelItem(String(format: "In:          %dW (%.1fV · %.2fA)",
+                                           Int(r.drawWatts.rounded()), r.voltsIn, r.ampsIn)))
+            menu.addItem(labelItem(String(format: "Adapter:     %dW max (%.0fV · %.0fA PD)",
+                                           r.adapterWatts, r.adapterVolts, r.adapterAmps)))
+            menu.addItem(labelItem(String(format: "To battery:  %dW",
+                                           Int(r.chargeWatts.rounded()))))
+            menu.addItem(labelItem(String(format: "To system:   %dW",
+                                           Int(systemWatts.rounded()))))
+
+            var batteryLine = "Battery:     \(r.batteryPercent)%"
+            if r.charging && r.timeToFullMinutes > 0 && r.timeToFullMinutes < 60 * 24 {
+                batteryLine += "  ·  \(formatTime(r.timeToFullMinutes)) to full"
+            }
+            menu.addItem(labelItem(batteryLine))
+        } else {
+            let draw = Int(r.dischargeWatts.rounded())
+            setStatusTitle("\(draw)W")
+
+            menu.addItem(labelItem(String(format: "Drawing:     %dW from battery", draw)))
+            var batteryLine = "Battery:     \(r.batteryPercent)%"
+            if r.timeToFullMinutes > 0 && r.timeToFullMinutes < 60 * 24 {
+                batteryLine += "  ·  \(formatTime(r.timeToFullMinutes)) left"
+            }
+            menu.addItem(labelItem(batteryLine))
+            menu.addItem(labelItem("Not plugged in"))
+        }
+
         menu.addItem(.separator())
         menu.addItem(quitItem())
         item.menu = menu
+    }
+
+    private func setStatusTitle(_ text: String) {
+        guard let button = item.button else { return }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.menuBarFont(ofSize: 12),
+            .foregroundColor: NSColor.labelColor
+        ]
+        button.attributedTitle = NSAttributedString(string: text, attributes: attrs)
     }
 
     private func labelItem(_ s: String) -> NSMenuItem {
