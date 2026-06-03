@@ -137,7 +137,7 @@ final class App: NSObject, NSApplicationDelegate {
     private func setStatusTitle(_ text: String) {
         guard let button = item.button else { return }
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.menuBarFont(ofSize: 12),
+            .font: NSFont.menuBarFont(ofSize: 11),
             .foregroundColor: NSColor.labelColor
         ]
         button.attributedTitle = NSAttributedString(string: text, attributes: attrs)
