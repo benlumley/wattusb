@@ -140,7 +140,9 @@ final class App: NSObject, NSApplicationDelegate {
             .font: NSFont.menuBarFont(ofSize: 11),
             .foregroundColor: NSColor.labelColor
         ]
-        button.attributedTitle = NSAttributedString(string: text, attributes: attrs)
+        let attributed = NSAttributedString(string: text, attributes: attrs)
+        button.attributedTitle = attributed
+        item.length = ceil(attributed.size().width) + 6
     }
 
     private func labelItem(_ s: String) -> NSMenuItem {
