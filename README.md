@@ -2,6 +2,12 @@
 
 Tiny macOS menu bar app that shows the live wattage your Mac is currently drawing from its USB-C / MagSafe charger.
 
+<p align="center">
+  <img src="docs/menubar.png" alt="wattusb showing 58W in the menu bar" height="40">
+  &nbsp;&nbsp;
+  <img src="docs/dropdown.png" alt="wattusb dropdown showing drawing 57W, adapter 60W max" height="120">
+</p>
+
 Useful for:
 
 - Telling whether a given charger is actually delivering its rated power.
