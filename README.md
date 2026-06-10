@@ -3,9 +3,17 @@
 Tiny macOS menu bar app that shows the live wattage your Mac is currently drawing — from its USB-C / MagSafe charger when plugged in, or from the battery when not.
 
 <p align="center">
-  <img src="docs/menubar.png" alt="wattusb showing wattage in the menu bar" height="40">
+  <b>Charging</b><br>
+  <img src="docs/menubar-charging.png" alt="wattusb showing 58W while charging" height="34">
   &nbsp;&nbsp;
-  <img src="docs/dropdown.png" alt="wattusb dropdown showing the power breakdown" height="120">
+  <img src="docs/dropdown-charging.png" alt="wattusb dropdown showing the charging power breakdown" height="120">
+</p>
+
+<p align="center">
+  <b>On battery</b><br>
+  <img src="docs/menubar-battery.png" alt="wattusb showing 24W draw on battery" height="34">
+  &nbsp;&nbsp;
+  <img src="docs/dropdown-battery.png" alt="wattusb dropdown showing battery draw" height="100">
 </p>
 
 Useful for:
