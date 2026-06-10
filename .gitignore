@@ -1,4 +1,5 @@
 .build/
 .swiftpm/
 wattusb.app/
+wattusb-*.zip
 Package.resolved

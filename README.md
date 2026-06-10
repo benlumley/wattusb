@@ -2,6 +2,8 @@
 
 Tiny macOS menu bar app that shows the live wattage your Mac is currently drawing — from its USB-C / MagSafe charger when plugged in, or from the battery when not.
 
+**[benlumley.github.io/wattusb](https://benlumley.github.io/wattusb/)**
+
 <p align="center">
   <b>Charging</b><br>
   <img src="docs/menubar-charging.png" alt="wattusb showing 58W while charging" height="34">
@@ -61,6 +63,24 @@ Updates every 2 seconds.
 
 ## Install
 
+### Homebrew (recommended)
+
+```sh
+brew install --cask benlumley/tap/wattusb
+```
+
+The app is ad-hoc signed (not notarized), so on **first launch** macOS Gatekeeper
+will block it. Either right-click `wattusb.app` → **Open** once to approve it, or run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/wattusb.app
+```
+
+Update or remove later with `brew upgrade --cask benlumley/tap/wattusb` /
+`brew uninstall --cask wattusb`.
+
+### Build from source
+
 ```sh
 git clone https://github.com/benlumley/wattusb.git
 cd wattusb
@@ -69,9 +89,9 @@ mv wattusb.app /Applications/
 open /Applications/wattusb.app
 ```
 
-Requires macOS 14+ and Xcode command-line tools.
-
-The build script produces a universal binary (Apple Silicon + Intel) and ad-hoc signs it so Gatekeeper lets it launch.
+Requires macOS 14+ and Xcode command-line tools. The build script produces a
+universal binary (Apple Silicon + Intel) and ad-hoc signs it so Gatekeeper lets
+it launch.
 
 ## How it works
 
