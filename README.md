@@ -1,6 +1,6 @@
 # wattusb
 
-Tiny macOS menu bar app that shows the live wattage your Mac is currently drawing — from its USB-C / MagSafe charger when plugged in, or from the battery when not.
+Tiny macOS menu bar app that shows the live wattage your Mac is currently drawing, from its USB-C / MagSafe charger when plugged in, or from the battery when not.
 
 **[benlumley.github.io/wattusb](https://benlumley.github.io/wattusb/)**
 
@@ -22,15 +22,15 @@ Useful for:
 
 - Telling whether a given charger is actually delivering its rated power.
 - Comparing ports on multi-port chargers (the "fast" port vs the slower ones).
-- Sanity-checking cables — a flaky cable will cap the negotiated voltage and the wattage drops accordingly.
+- Sanity-checking cables: a flaky cable will cap the negotiated voltage and the wattage drops accordingly.
 - Seeing how much power your Mac is sipping when running on battery.
 
 ## What it shows
 
 **Menu bar**: a single number, e.g. `58W`.
 
-- **Plugged in** — total watts coming in from the charger.
-- **On battery** — watts being drawn from the cells (i.e. what your Mac is consuming right now).
+- **Plugged in**: total watts coming in from the charger.
+- **On battery**: watts being drawn from the cells (i.e. what your Mac is consuming right now).
 
 **Click for details when plugged in**:
 
@@ -44,10 +44,10 @@ Battery:     88%  ·  1h 22m to full
 Quit
 ```
 
-- **In** — real-time watts flowing in from the charger.
-- **Adapter** — the PD contract the charger negotiated (its advertised max).
-- **To battery** / **To system** — how the input watts split between charging the cells and running the Mac.
-- **Battery** — current charge level, plus time-to-full when actively charging.
+- **In**: real-time watts flowing in from the charger.
+- **Adapter**: the PD contract the charger negotiated (its advertised max).
+- **To battery** / **To system**: how the input watts split between charging the cells and running the Mac.
+- **Battery**: current charge level, plus time-to-full when actively charging.
 
 **Click for details on battery**:
 
@@ -97,12 +97,12 @@ it launch.
 
 All data comes from IOKit's `AppleSmartBattery` service:
 
-- Live input draw — `PowerTelemetryData.SystemPowerIn` (mW from the adapter)
-- Input voltage / current — `SystemVoltageIn`, `SystemCurrentIn`
-- PD contract — `AdapterDetails.Watts`, `AdapterVoltage`, `Current`
-- Battery side — `Voltage` × `Amperage` (signed: positive = charging, negative = discharging)
-- Battery level / time — `CurrentCapacity`, `TimeRemaining`
-- State flags — `ExternalConnected`, `IsCharging`
+- Live input draw: `PowerTelemetryData.SystemPowerIn` (mW from the adapter)
+- Input voltage / current: `SystemVoltageIn`, `SystemCurrentIn`
+- PD contract: `AdapterDetails.Watts`, `AdapterVoltage`, `Current`
+- Battery side: `Voltage` × `Amperage` (signed: positive = charging, negative = discharging)
+- Battery level / time: `CurrentCapacity`, `TimeRemaining`
+- State flags: `ExternalConnected`, `IsCharging`
 
 No entitlements, no network, no preferences, no launch agent. The whole app is one Swift file (~140 lines). It's an `LSUIElement` app so there's no dock icon and no main window.
 
