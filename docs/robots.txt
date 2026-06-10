@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /og.html
+
+Sitemap: https://benlumley.github.io/wattusb/sitemap.xml
