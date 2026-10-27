@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import IOKit
 import ServiceManagement
 
@@ -15,6 +16,21 @@ struct Reading {
     let chargeWatts: Double       // power into the battery cells (when plugged)
     let dischargeWatts: Double    // power out of the battery (when on battery)
     let timeToFullMinutes: Int    // also serves as time-to-empty when unplugged
+    let fullyCharged: Bool
+    let healthPercent: Int        // full charge capacity vs design capacity
+    let cycles: Int
+    let designCycles: Int         // cycles the battery is rated for
+    let temperature: Double       // °C
+    let loadWatts: Double         // what the Mac itself is using, whichever way the power is coming in
+
+    var usageWatts: Double {
+        if loadWatts > 0 { return loadWatts }
+        return plugged ? max(0, drawWatts - chargeWatts) : dischargeWatts
+    }
+
+    // Charger input reads 0 for a few seconds after plugging in, while it negotiates.
+    var connecting: Bool { plugged && drawWatts == 0 }
+    var headlineWatts: Double { plugged && !connecting ? drawWatts : usageWatts }
 }
 
 func readBattery() -> Reading? {
@@ -34,6 +50,7 @@ func readBattery() -> Reading? {
     let powerInMW = telemetry["SystemPowerIn"] as? Int ?? 0
     let voltInMV = telemetry["SystemVoltageIn"] as? Int ?? 0
     let currentInMA = telemetry["SystemCurrentIn"] as? Int ?? 0
+    let loadMW = telemetry["SystemLoad"] as? Int ?? 0
 
     let adapter = prop("AdapterDetails") as? [String: Any] ?? [:]
     let adapterWatts = adapter["Watts"] as? Int ?? 0
@@ -50,6 +67,10 @@ func readBattery() -> Reading? {
 
     let timeToFull = prop("TimeRemaining") as? Int ?? 0
 
+    let design = prop("DesignCapacity") as? Int ?? 0
+    let nominal = prop("NominalChargeCapacity") as? Int ?? 0
+    let health = design > 0 ? min(100, nominal * 100 / design) : 0
+
     return Reading(
         plugged: plugged,
         charging: charging,
@@ -62,7 +83,13 @@ func readBattery() -> Reading? {
         batteryPercent: percent,
         chargeWatts: Double(chargeMW) / 1000.0,
         dischargeWatts: Double(dischargeMW) / 1000.0,
-        timeToFullMinutes: timeToFull
+        timeToFullMinutes: timeToFull,
+        fullyCharged: (prop("FullyCharged") as? Bool) ?? false,
+        healthPercent: health,
+        cycles: prop("CycleCount") as? Int ?? 0,
+        designCycles: prop("DesignCycleCount9C") as? Int ?? 1000,
+        temperature: Double(prop("Temperature") as? Int ?? 0) / 100.0,
+        loadWatts: Double(loadMW) / 1000.0
     )
 }
 
@@ -76,67 +103,63 @@ func formatTime(_ minutes: Int) -> String {
 @MainActor
 final class App: NSObject, NSApplicationDelegate {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    let monitor = Monitor()
+    lazy var host = NSHostingView(rootView: Dashboard(monitor: monitor))
     var timer: Timer?
 
     func applicationDidFinishLaunching(_: Notification) {
-        item.menu = NSMenu()
+        let menu = NSMenu()
+        let dashboard = NSMenuItem()
+        dashboard.view = host
+        menu.addItem(dashboard)
+        menu.addItem(.separator())
+        menu.addItem(loginItem)
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.delegate = self
+        item.menu = menu
+
         registerLoginItemOnce()
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            Task { @MainActor in self.refresh() }
+        // .common so it keeps updating while the menu is open. Timers fire on the main thread; a Task would wait
+        // until the menu closes.
+        let timer = Timer(timeInterval: 2.0, repeats: true) { _ in
+            MainActor.assumeIsolated { self.refresh() }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     func refresh() {
-        let r = readBattery()
-        let menu = NSMenu()
-
-        guard let r else {
-            setStatusTitle("—")
-            menu.addItem(labelItem("No battery data"))
-            menu.addItem(.separator())
-            menu.addItem(loginItem())
-            menu.addItem(quitItem())
-            item.menu = menu
+        monitor.update(readBattery())
+        host.frame.size = host.fittingSize
+        guard let r = monitor.reading else {
+            setStatus("—", symbol: nil)
             return
         }
-
-        if r.plugged {
-            setStatusTitle("\(Int(r.drawWatts.rounded()))W")
-
-            let systemWatts = max(0, r.drawWatts - r.chargeWatts)
-            menu.addItem(labelItem(String(format: "In:          %dW (%.1fV · %.2fA)",
-                                           Int(r.drawWatts.rounded()), r.voltsIn, r.ampsIn)))
-            menu.addItem(labelItem(String(format: "Adapter:     %dW max (%.0fV · %.0fA PD)",
-                                           r.adapterWatts, r.adapterVolts, r.adapterAmps)))
-            menu.addItem(labelItem(String(format: "To battery:  %dW",
-                                           Int(r.chargeWatts.rounded()))))
-            menu.addItem(labelItem(String(format: "To system:   %dW",
-                                           Int(systemWatts.rounded()))))
-
-            var batteryLine = "Battery:     \(r.batteryPercent)%"
-            if r.charging && r.timeToFullMinutes > 0 && r.timeToFullMinutes < 60 * 24 {
-                batteryLine += "  ·  \(formatTime(r.timeToFullMinutes)) to full"
-            }
-            menu.addItem(labelItem(batteryLine))
-        } else {
-            let draw = Int(r.dischargeWatts.rounded())
-            setStatusTitle("\(draw)W")
-
-            menu.addItem(labelItem(String(format: "Drawing:     %dW from battery", draw)))
-            var batteryLine = "Battery:     \(r.batteryPercent)%"
-            if r.timeToFullMinutes > 0 && r.timeToFullMinutes < 60 * 24 {
-                batteryLine += "  ·  \(formatTime(r.timeToFullMinutes)) left"
-            }
-            menu.addItem(labelItem(batteryLine))
-            menu.addItem(labelItem("Not plugged in"))
-        }
-
-        menu.addItem(.separator())
-        menu.addItem(loginItem())
-        menu.addItem(quitItem())
-        item.menu = menu
+        let watts = Int(r.headlineWatts.rounded())
+        setStatus("\(watts)W", symbol: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : nil)
     }
+
+    private func setStatus(_ text: String, symbol: String?) {
+        guard let button = item.button else { return }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.menuBarFont(ofSize: 11),
+            .foregroundColor: NSColor.labelColor
+        ]
+        let attributed = NSAttributedString(string: text, attributes: attrs)
+        button.attributedTitle = attributed
+        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+        button.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil)?.withSymbolConfiguration(config) }
+        button.imagePosition = .imageLeading
+        let imageWidth = button.image.map { $0.size.width + 2 } ?? 0
+        item.length = ceil(attributed.size().width + imageWidth) + 6
+    }
+
+    private lazy var loginItem: NSMenuItem = {
+        let it = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
+        it.target = self
+        return it
+    }()
 
     // Opens at login by default, the first time the app runs, so turning it off sticks.
     private func registerLoginItemOnce() {
@@ -159,35 +182,12 @@ final class App: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }
-        refresh()
     }
+}
 
-    private func setStatusTitle(_ text: String) {
-        guard let button = item.button else { return }
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.menuBarFont(ofSize: 11),
-            .foregroundColor: NSColor.labelColor
-        ]
-        let attributed = NSAttributedString(string: text, attributes: attrs)
-        button.attributedTitle = attributed
-        item.length = ceil(attributed.size().width) + 6
-    }
-
-    private func labelItem(_ s: String) -> NSMenuItem {
-        let it = NSMenuItem(title: s, action: nil, keyEquivalent: "")
-        it.isEnabled = false
-        return it
-    }
-
-    private func loginItem() -> NSMenuItem {
-        let it = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
-        it.target = self
-        it.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        return it
-    }
-
-    private func quitItem() -> NSMenuItem {
-        NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+extension App: NSMenuDelegate {
+    func menuWillOpen(_: NSMenu) {
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 }
 
