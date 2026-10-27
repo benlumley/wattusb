@@ -41,6 +41,7 @@ To battery:  31W
 To system:   27W
 Battery:     88%  ·  1h 22m to full
 ─────────
+✓ Open at Login
 Quit
 ```
 
@@ -56,10 +57,13 @@ Drawing:     12W from battery
 Battery:     88%  ·  6h 30m left
 Not plugged in
 ─────────
+✓ Open at Login
 Quit
 ```
 
 Updates every 2 seconds.
+
+**Open at Login**: on by default the first time the app runs; untick it in the menu to turn it off.
 
 ## Install
 
@@ -104,7 +108,7 @@ All data comes from IOKit's `AppleSmartBattery` service:
 - Battery level / time: `CurrentCapacity`, `TimeRemaining`
 - State flags: `ExternalConnected`, `IsCharging`
 
-No entitlements, no network, no preferences, no launch agent. The whole app is one Swift file (~140 lines). It's an `LSUIElement` app so there's no dock icon and no main window.
+No entitlements, no network, no launch agent (Open at Login uses `SMAppService.mainApp`). The whole app is one Swift file (~200 lines). It's an `LSUIElement` app so there's no dock icon and no main window.
 
 The status item title uses `NSFont.menuBarFont(ofSize: 11)` via `attributedTitle` to line up with the Control Center battery percentage.
 

@@ -1,5 +1,6 @@
 import AppKit
 import IOKit
+import ServiceManagement
 
 struct Reading {
     let plugged: Bool
@@ -79,6 +80,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         item.menu = NSMenu()
+        registerLoginItemOnce()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
             Task { @MainActor in self.refresh() }
@@ -93,6 +95,7 @@ final class App: NSObject, NSApplicationDelegate {
             setStatusTitle("—")
             menu.addItem(labelItem("No battery data"))
             menu.addItem(.separator())
+            menu.addItem(loginItem())
             menu.addItem(quitItem())
             item.menu = menu
             return
@@ -130,8 +133,33 @@ final class App: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+        menu.addItem(loginItem())
         menu.addItem(quitItem())
         item.menu = menu
+    }
+
+    // Opens at login by default, the first time the app runs, so turning it off sticks.
+    private func registerLoginItemOnce() {
+        guard !UserDefaults.standard.bool(forKey: "loginItemRegistered") else { return }
+        UserDefaults.standard.set(true, forKey: "loginItemRegistered")
+        try? SMAppService.mainApp.register()
+    }
+
+    @objc private func toggleOpenAtLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't change Open at Login"
+            alert.informativeText = error.localizedDescription
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+        refresh()
     }
 
     private func setStatusTitle(_ text: String) {
@@ -148,6 +176,13 @@ final class App: NSObject, NSApplicationDelegate {
     private func labelItem(_ s: String) -> NSMenuItem {
         let it = NSMenuItem(title: s, action: nil, keyEquivalent: "")
         it.isEnabled = false
+        return it
+    }
+
+    private func loginItem() -> NSMenuItem {
+        let it = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
+        it.target = self
+        it.state = SMAppService.mainApp.status == .enabled ? .on : .off
         return it
     }
 
