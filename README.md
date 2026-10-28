@@ -97,6 +97,30 @@ Requires macOS 14+ and Xcode command-line tools. The build script produces a
 universal binary (Apple Silicon + Intel) and ad-hoc signs it so Gatekeeper lets
 it launch.
 
+## CI and releases
+
+- **CI** (`.github/workflows/ci.yml`) runs on every pull request: ShellCheck and
+  actionlint, a `-warnings-as-errors` compile, the universal `build.sh` build, and
+  `scripts/verify-app.sh` (plist lint, both architectures present, valid ad-hoc
+  signature, 5-second launch smoke test). The zipped app is attached to the run.
+- **Release** (`.github/workflows/release.yml`) runs on every push to `main`
+  except docs-only changes (`docs/`, `*.md`, `LICENSE`). It reruns CI, then
+  publishes a GitHub release `vX.Y.Z` with `wattusb-X.Y.Z.zip`.
+
+Versioning is automatic and nothing is committed back:
+
+- Each release bumps the patch of the latest `vX.Y.Z` tag (`0.1.0` → `0.1.1`).
+  The bundle's `CFBundleShortVersionString` is stamped at build time and
+  `CFBundleVersion` is the commit count.
+- To start a new minor/major line, set `CFBundleShortVersionString` in
+  `Sources/wattusb/Info.plist` higher than the latest tag (e.g. `0.2.0`); the next
+  release uses it, then patches continue from there.
+- Release runs are serialized. A commit that already has a release, or is already
+  included in a newer one, is skipped, so re-runs never duplicate a release.
+  Re-run via **Actions → Release → Run workflow** on `main`.
+- The Homebrew cask in `benlumley/homebrew-tap` is not updated automatically;
+  bump its `version` and `sha256` (printed in the release notes) by hand.
+
 ## How it works
 
 All data comes from IOKit's `AppleSmartBattery` service:

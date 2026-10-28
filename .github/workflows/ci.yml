@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint scripts and workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: ShellCheck
+        run: shellcheck build.sh scripts/*.sh
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+
+  build:
+    name: Build and verify app
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile with warnings as errors
+        run: swift build -Xswiftc -warnings-as-errors
+      - name: Build universal app
+        run: sh build.sh
+      - name: Verify app bundle
+        run: sh scripts/verify-app.sh
+      - name: Package
+        run: ditto -c -k --keepParent wattusb.app wattusb-${{ github.sha }}.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wattusb-${{ github.sha }}
+          path: wattusb-${{ github.sha }}.zip
+          retention-days: 14
