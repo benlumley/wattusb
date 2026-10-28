@@ -40,6 +40,6 @@ if ! kill -0 "$pid" 2>/dev/null; then
   echo "wattusb exited during launch (status ${status:-0})" >&2
   exit 1
 fi
-kill "$pid"
+kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 echo "Launch smoke test passed"

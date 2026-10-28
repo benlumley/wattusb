@@ -12,7 +12,8 @@
 set -eu
 
 base=${1:?usage: next-version.sh <base-version>}
-semver='^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$'
+n='(0|[1-9][0-9]*)'
+semver="^$n\\.$n\\.$n\$"
 
 if ! printf '%s\n' "$base" | grep -Eq "$semver"; then
   echo "Base version '$base' is not X.Y.Z" >&2

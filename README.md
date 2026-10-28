@@ -103,8 +103,10 @@ it launch.
   actionlint, a `-warnings-as-errors` compile, the universal `build.sh` build, and
   `scripts/verify-app.sh` (plist lint, both architectures present, valid ad-hoc
   signature, 5-second launch smoke test). The zipped app is attached to the run.
+  The runner has no battery, so the smoke test only covers start-up and the
+  "No battery data" path.
 - **Release** (`.github/workflows/release.yml`) runs on every push to `main`
-  except docs-only changes (`docs/`, `*.md`, `LICENSE`). It reruns CI, then
+  except changes limited to `docs/`, `*.md`, `LICENSE`, or `.github/`. It reruns CI, then
   publishes a GitHub release `vX.Y.Z` with `wattusb-X.Y.Z.zip`.
 
 Versioning is automatic and nothing is committed back:
@@ -117,7 +119,9 @@ Versioning is automatic and nothing is committed back:
   release uses it, then patches continue from there.
 - Release runs are serialized. A commit that already has a release, or is already
   included in a newer one, is skipped, so re-runs never duplicate a release.
-  Re-run via **Actions → Release → Run workflow** on `main`.
+  Re-run via **Actions → Release → Run workflow** on `main` (also how to
+  release a workflow-only change). A draft release for the next version makes
+  the run fail rather than skip; publish or delete it.
 - The Homebrew cask in `benlumley/homebrew-tap` is not updated automatically;
   bump its `version` and `sha256` (printed in the release notes) by hand.
 

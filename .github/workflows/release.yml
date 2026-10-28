@@ -7,6 +7,7 @@ on:
   push:
     branches: [main]
     paths-ignore:
+      - ".github/**"
       - "docs/**"
       - "**.md"
       - "LICENSE"
@@ -27,10 +28,12 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
-    # Serialize releases so two merges cannot claim the same version.
+    # Serialize releases so two merges cannot claim the same version, and queue
+    # every pending run (the default keeps only one and cancels the rest).
     concurrency:
       group: release
       cancel-in-progress: false
+      queue: max
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -50,6 +53,10 @@ jobs:
             echo "A newer release already includes this commit; nothing to do."
             echo "publish=false" >> "$GITHUB_OUTPUT"
           elif gh release view "v$version" >/dev/null 2>&1; then
+            if [ -z "$(git tag --points-at HEAD --list "v$version")" ]; then
+              echo "::error::Release v$version exists but is not tagged on this commit (a draft?). Delete or publish it, then re-run."
+              exit 1
+            fi
             echo "Release v$version already exists for this commit; nothing to do."
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else

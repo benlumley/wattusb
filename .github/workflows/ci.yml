@@ -22,7 +22,8 @@ jobs:
       - name: ShellCheck
         run: shellcheck build.sh scripts/*.sh
       - name: actionlint
-        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+        # actionlint 1.7.12 predates the `concurrency.queue` key (May 2026).
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color -ignore 'unexpected key "queue"'
 
   build:
     name: Build and verify app
@@ -30,6 +31,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check release version selection
+        run: |
+          base=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Sources/wattusb/Info.plist)
+          echo "Next release version: $(sh scripts/next-version.sh "$base")"
       - name: Compile with warnings as errors
         run: swift build -Xswiftc -warnings-as-errors
       - name: Build universal app
