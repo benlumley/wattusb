@@ -36,7 +36,8 @@ jobs:
       - name: Check release version selection
         run: |
           base=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Sources/wattusb/Info.plist)
-          echo "Next release version: $(sh scripts/next-version.sh "$base")"
+          version=$(sh scripts/next-version.sh "$base")
+          echo "Next release version: $version"
       - name: Compile with warnings as errors
         run: swift build -Xswiftc -warnings-as-errors
       - name: Build universal app
