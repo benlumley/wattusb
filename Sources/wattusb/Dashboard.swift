@@ -2,11 +2,38 @@ import AppKit
 import Charts
 import SwiftUI
 
+// One slice of where the power goes: into the battery, the Mac itself, or something charging off a port.
+struct Part {
+    let name: String
+    let watts: Double
+    let color: Color
+    let help: String
+}
+
+extension Reading {
+    var parts: [Part] {
+        let total = max(plugged ? drawWatts : dischargeWatts, 0.1)
+        let toBattery = plugged ? min(chargeWatts, total) : 0
+        let scale = deviceWatts > 0 ? min(1, (total - toBattery) / deviceWatts) : 0
+        let deviceColors: [Color] = [.purple, .pink, .teal]
+        let toDevices = devices.map { d in
+            Part(name: "Port \(d.port)", watts: d.watts * scale, color: deviceColors[max(0, d.port - 1) % deviceColors.count],
+                 help: String(format: "Something on port %d is drawing %.1fV · %.2fA", d.port, d.volts, d.amps))
+        }
+        let toMac = total - toBattery - toDevices.reduce(0) { $0 + $1.watts }
+        return [Part(name: "Mac", watts: toMac, color: .blue, help: "What the Mac itself is using")]
+            + (plugged ? [Part(name: "Battery", watts: toBattery, color: .green, help: "Charging the battery")] : [])
+            + toDevices
+    }
+}
+
 struct Sample: Identifiable {
     let id = UUID()
     let date: Date
-    let usage: Double
+    let parts: [Part]
     let input: Double?    // charger watts, when plugged
+
+    func watts(_ name: String) -> Double? { parts.first { $0.name == name }?.watts }
 }
 
 @MainActor
@@ -19,7 +46,7 @@ final class Monitor: ObservableObject {
         reading = r
         guard let r else { return }
         let now = Date()
-        history.append(Sample(date: now, usage: r.usageWatts, input: r.plugged && !r.connecting ? r.drawWatts : nil))
+        history.append(Sample(date: now, parts: r.connecting ? [] : r.parts, input: r.plugged && !r.connecting ? r.drawWatts : nil))
         history.removeAll { now.timeIntervalSince($0.date) > window }
     }
 }
@@ -63,8 +90,6 @@ struct Dashboard: View {
             if let r = monitor.reading {
                 header(r)
                 chart(r)
-                if r.plugged && !r.connecting { split(r) }
-                battery(r)
             } else {
                 Text("No battery data").foregroundStyle(.secondary)
             }
@@ -72,7 +97,7 @@ struct Dashboard: View {
         .padding(.horizontal, 14)
         .padding(.top, 6)
         .padding(.bottom, 4)
-        .frame(width: 300)
+        .frame(width: 320)
     }
 
     private func header(_ r: Reading) -> some View {
@@ -82,7 +107,7 @@ struct Dashboard: View {
             HStack(spacing: 6) {
                 Image(systemName: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : "battery.75percent")
                     .frame(width: 16)
-                Text(state(r))
+                header(state: r).help(batteryDetails(r))
                 Spacer()
                 Text(load.label)
                     .font(.caption.weight(.semibold))
@@ -101,46 +126,68 @@ struct Dashboard: View {
                     .foregroundStyle(.secondary))
                     .monospacedDigit()
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
+                // Reads on from the big number: "44W from 60W charger", "13W from battery".
+                Group {
                     if r.connecting {
-                        Text("Mac usage").foregroundStyle(.secondary)
+                        label("Mac usage")
                     } else if r.plugged {
                         let headroom = r.adapterWatts > 0 ? r.drawWatts / Double(r.adapterWatts) : 0
-                        value("\(r.adapterWatts)W", color: headroom > 0.9 ? .orange : .primary) + label(" charger")
-                        value(String(format: "%.1fV", r.voltsIn)) + label(" · ") + value(String(format: "%.2fA", r.ampsIn))
+                        label("from ") + value("\(r.adapterWatts)W", color: headroom > 0.9 ? .orange : .primary) + label(" charger")
                     } else {
-                        Text("from battery").foregroundStyle(.secondary)
+                        label("from battery")
                     }
                 }
                 .font(.caption)
-                .monospacedDigit()
             }
+            .help(breakdown(r))
             // The big number's descender space leaves too much of a gap above the chart.
             .padding(.bottom, -2)
         }
     }
 
-    private func state(_ r: Reading) -> String {
-        if !r.plugged { return "On battery" }
-        if r.connecting { return "Connecting to charger…" }
-        if r.charging { return "Charging" }
-        return r.fullyCharged ? "Fully charged" : "Plugged in, not charging"
+    // Always the battery level first; the icon already says whether it's charging or on battery.
+    private func header(state r: Reading) -> Text {
+        let percent = label("Battery ") + value("\(r.batteryPercent)%")
+        let minutes = r.timeToFullMinutes > 0 && r.timeToFullMinutes < 60 * 24 ? r.timeToFullMinutes : 0
+        if !r.plugged {
+            return minutes > 0 ? percent + label(" · ") + value(formatTime(minutes)) + label(" left") : percent
+        }
+        if r.connecting { return percent + label(" · connecting…") }
+        if r.charging {
+            return minutes > 0 ? percent + label(" · ") + value(formatTime(minutes)) + label(" to full") : percent
+        }
+        return percent + label(r.fullyCharged ? " · charged" : " · not charging")
     }
 
     private func chart(_ r: Reading) -> some View {
-        let peak = monitor.history.map(\.usage).max() ?? 0
-        let top = max(10, (monitor.history.map { max($0.usage, $0.input ?? 0) }.max() ?? 0) * 1.2)
+        let peak = monitor.history.compactMap { $0.watts("Mac") }.max() ?? 0
+        let top = max(10, (monitor.history.map { max($0.watts("Mac") ?? 0, $0.input ?? 0) }.max() ?? 0) * 1.2)
+        // The battery and each device seen during the window get their own line, in the order of Reading.parts.
+        var others: [Part] = []
+        for s in monitor.history { for p in s.parts where p.name != "Mac" && !others.contains(where: { $0.name == p.name }) { others.append(p) } }
+        others.sort { ($0.name == "Battery" ? "" : $0.name) < ($1.name == "Battery" ? "" : $1.name) }
+        // Skip anything that's sat at 0W the whole time, like the battery when it's full.
+        others.removeAll { p in monitor.history.allSatisfy { ($0.watts(p.name) ?? 0) < 0.5 } }
+        let now = r.parts
         return VStack(alignment: .leading, spacing: 6) {
             Chart {
                 ForEach(monitor.history) { s in
-                    AreaMark(x: .value("Time", s.date), y: .value("Usage", s.usage))
-                        .foregroundStyle(LinearGradient(colors: [Color.blue.opacity(0.35), Color.blue.opacity(0.02)],
-                                                        startPoint: .top, endPoint: .bottom))
-                        .interpolationMethod(.monotone)
-                    LineMark(x: .value("Time", s.date), y: .value("Usage", s.usage), series: .value("Series", "Usage"))
-                        .foregroundStyle(Color.blue)
-                        .lineStyle(StrokeStyle(lineWidth: 2))
-                        .interpolationMethod(.monotone)
+                    if let mac = s.watts("Mac") {
+                        AreaMark(x: .value("Time", s.date), y: .value("Mac", mac))
+                            .foregroundStyle(LinearGradient(colors: [Color.blue.opacity(0.35), Color.blue.opacity(0.02)],
+                                                            startPoint: .top, endPoint: .bottom))
+                            .interpolationMethod(.monotone)
+                        LineMark(x: .value("Time", s.date), y: .value("Mac", mac), series: .value("Series", "Mac"))
+                            .foregroundStyle(Color.blue)
+                            .lineStyle(StrokeStyle(lineWidth: 2))
+                            .interpolationMethod(.monotone)
+                    }
+                    ForEach(others, id: \.name) { part in
+                        LineMark(x: .value("Time", s.date), y: .value(part.name, s.watts(part.name) ?? 0), series: .value("Series", part.name))
+                            .foregroundStyle(part.color)
+                            .lineStyle(StrokeStyle(lineWidth: 1.5))
+                            .interpolationMethod(.monotone)
+                    }
                     if let input = s.input {
                         LineMark(x: .value("Time", s.date), y: .value("In", input), series: .value("Series", "In"))
                             .foregroundStyle(Color.gray)
@@ -158,14 +205,28 @@ struct Dashboard: View {
                 }
             }
             .frame(height: 70)
-            HStack {
-                swatch(.blue, "Mac")
-                if r.plugged { swatch(.gray, "Charger", dashed: true) }
-                Spacer()
-                label("Peak ") + value("\(Int(peak.rounded()))W") + label(" · last 5 min")
+            let items: [AnyView] = [AnyView(swatch(.blue, "Mac", now.first?.watts ?? 0)
+                .help("What the Mac itself is using, peaking at \(Int(peak.rounded()))W in the last 5 minutes"))]
+                + others.map { part in
+                    let current = now.first { $0.name == part.name }
+                    return AnyView(swatch(part.color, part.name, current?.watts ?? 0).help(current?.help ?? part.help))
+                }
+            HStack(spacing: 10) {
+                ForEach(items.indices, id: \.self) { items[$0].fixedSize() }
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func swatch(_ color: Color, _ title: String, _ watts: Double?, dashed: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            // A ring for the dashed charger line, a dot for the rest.
+            if dashed {
+                Circle().strokeBorder(color, lineWidth: 1.5).frame(width: 7, height: 7)
+            } else {
+                Circle().fill(color).frame(width: 7, height: 7)
+            }
+            label(title) + (watts.map { value(" \(Int($0.rounded()))W") } ?? Text(""))
         }
     }
 
@@ -178,67 +239,24 @@ struct Dashboard: View {
         Text(s).foregroundColor(.secondary)
     }
 
-    private func dot(_ color: Color) -> some View {
-        Circle().fill(color).frame(width: 7, height: 7)
+    // Everything the original menu showed, for the big number's tooltip.
+    private func breakdown(_ r: Reading) -> String {
+        var lines: [String] = []
+        if r.plugged && !r.connecting {
+            lines.append(String(format: "In: %.0fW (%.1fV · %.2fA), the dashed line", r.drawWatts, r.voltsIn, r.ampsIn))
+            lines.append(String(format: "Charger: %dW max (%.0fV · %.0fA PD)", r.adapterWatts, r.adapterVolts, r.adapterAmps))
+        } else if !r.plugged {
+            lines.append(String(format: "Drawing %.0fW from the battery", r.dischargeWatts))
+        }
+        for part in r.parts {
+            lines.append(String(format: "To %@: %.0fW", part.name == "Mac" ? "Mac" : part.name.lowercased(), part.watts))
+        }
+        return lines.joined(separator: "\n")
     }
 
-    private func swatch(_ color: Color, _ title: String, dashed: Bool = false) -> some View {
-        HStack(spacing: 4) {
-            Path { $0.move(to: CGPoint(x: 0, y: 1)); $0.addLine(to: CGPoint(x: 12, y: 1)) }
-                .stroke(color, style: StrokeStyle(lineWidth: 2, dash: dashed ? [3, 2] : []))
-                .frame(width: 12, height: 2)
-            Text(title)
-        }
-    }
-
-    private func split(_ r: Reading) -> some View {
-        let total = max(r.drawWatts, 0.1)
-        let toBattery = min(r.chargeWatts, total)
-        let toMac = total - toBattery
-        return VStack(alignment: .leading, spacing: 6) {
-            GeometryReader { geo in
-                HStack(spacing: 2) {
-                    if toBattery >= 0.5 {
-                        Capsule().fill(.green)
-                            .frame(width: geo.size.width * toBattery / total)
-                    }
-                    Capsule().fill(.blue)
-                }
-            }
-            .frame(height: 6)
-            HStack(spacing: 12) {
-                legend(.green, "To battery", toBattery)
-                legend(.blue, "To Mac", toMac)
-            }
-        }
-    }
-
-    private func legend(_ color: Color, _ title: String, _ watts: Double) -> some View {
-        HStack(spacing: 4) {
-            dot(color)
-            label(title + " ") + value("\(Int(watts.rounded()))W")
-        }
-        .font(.caption)
-    }
-
-    private func battery(_ r: Reading) -> some View {
-        var time = Text("")
-        if r.timeToFullMinutes > 0 && r.timeToFullMinutes < 60 * 24 {
-            if r.plugged && r.charging { time = value(formatTime(r.timeToFullMinutes)) + label(" to full") }
-            if !r.plugged { time = value(formatTime(r.timeToFullMinutes)) + label(" left") }
-        }
-        // Only flag what's worth worrying about: macOS recommends service below 80% health, batteries are rated
-        // for a set number of cycles, and they shouldn't run hot.
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                label("Battery ") + value("\(r.batteryPercent)%")
-                Spacer()
-                time
-            }
-            label("Health ") + value("\(r.healthPercent)%", color: r.healthPercent < 80 ? .red : .primary)
-                + label(" · ") + value("\(r.cycles)", color: r.cycles >= r.designCycles ? .red : .primary) + label(" cycles")
-                + label(" · ") + value(String(format: "%.0f°C", r.temperature), color: r.temperature >= 40 ? .red : .primary)
-        }
-        .font(.caption)
+    // Health, cycles and temperature change over months, not minutes, so they live in the battery line's tooltip.
+    private func batteryDetails(_ r: Reading) -> String {
+        String(format: "Health %d%%: holds that much of the charge it did when new (macOS recommends service below 80%%)\n"
+                   + "%d of the %d charge cycles it's rated for\n%.0f°C", r.healthPercent, r.cycles, r.designCycles, r.temperature)
     }
 }

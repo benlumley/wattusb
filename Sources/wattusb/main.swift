@@ -3,6 +3,14 @@ import SwiftUI
 import IOKit
 import ServiceManagement
 
+// Something charging off one of the Mac's USB-C ports, e.g. a phone.
+struct Device {
+    let port: Int
+    let watts: Double
+    let volts: Double
+    let amps: Double
+}
+
 struct Reading {
     let plugged: Bool
     let charging: Bool
@@ -22,6 +30,9 @@ struct Reading {
     let designCycles: Int         // cycles the battery is rated for
     let temperature: Double       // °C
     let loadWatts: Double         // what the Mac itself is using, whichever way the power is coming in
+    let devices: [Device]
+
+    var deviceWatts: Double { devices.reduce(0) { $0 + $1.watts } }
 
     var usageWatts: Double {
         if loadWatts > 0 { return loadWatts }
@@ -30,7 +41,11 @@ struct Reading {
 
     // Charger input reads 0 for a few seconds after plugging in, while it negotiates.
     var connecting: Bool { plugged && drawWatts == 0 }
-    var headlineWatts: Double { plugged && !connecting ? drawWatts : usageWatts }
+    // Everything coming in from the charger, or going out of the battery, including devices charging off the ports.
+    var headlineWatts: Double {
+        if plugged { return connecting ? usageWatts : drawWatts }
+        return dischargeWatts > 0 ? dischargeWatts : usageWatts
+    }
 }
 
 func readBattery() -> Reading? {
@@ -67,6 +82,16 @@ func readBattery() -> Reading? {
 
     let timeToFull = prop("TimeRemaining") as? Int ?? 0
 
+    let powerOut = prop("PowerOutDetails") as? [[String: Any]] ?? []
+    let devices = powerOut.compactMap { port -> Device? in
+        let mW = port["Watts"] as? Int ?? 0
+        guard mW >= 100 else { return nil }
+        return Device(port: port["PortIndex"] as? Int ?? 0,
+                      watts: Double(mW) / 1000.0,
+                      volts: Double(port["AdapterVoltage"] as? Int ?? 0) / 1000.0,
+                      amps: Double(port["Current"] as? Int ?? 0) / 1000.0)
+    }
+
     let design = prop("DesignCapacity") as? Int ?? 0
     let nominal = prop("NominalChargeCapacity") as? Int ?? 0
     let health = design > 0 ? min(100, nominal * 100 / design) : 0
@@ -89,7 +114,8 @@ func readBattery() -> Reading? {
         cycles: prop("CycleCount") as? Int ?? 0,
         designCycles: prop("DesignCycleCount9C") as? Int ?? 1000,
         temperature: Double(prop("Temperature") as? Int ?? 0) / 100.0,
-        loadWatts: Double(loadMW) / 1000.0
+        loadWatts: Double(loadMW) / 1000.0,
+        devices: devices
     )
 }
 
