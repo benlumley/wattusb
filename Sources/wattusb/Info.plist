@@ -21,6 +21,6 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Ben Lumley</string>
+    <string>Copyright © Ben Lumley. MIT licensed.</string>
 </dict>
 </plist>

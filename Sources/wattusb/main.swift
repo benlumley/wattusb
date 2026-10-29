@@ -126,81 +126,40 @@ func formatTime(_ minutes: Int) -> String {
     return "\(m)m"
 }
 
+// The menu bar title, drawn as an image since MenuBarExtra ignores fonts on its label. menuBarFont at 11pt lines up
+// with Control Center's battery percentage.
+func statusImage(_ text: String, symbol: String?) -> NSImage {
+    let title = NSAttributedString(string: text, attributes: [.font: NSFont.menuBarFont(ofSize: 11), .foregroundColor: NSColor.black])
+    let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+    let icon = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil)?.withSymbolConfiguration(config) }
+    let iconWidth = icon.map { $0.size.width + 2 } ?? 0
+    let titleSize = title.size()
+    let image = NSImage(size: NSSize(width: ceil(iconWidth + titleSize.width), height: ceil(titleSize.height)), flipped: false) { rect in
+        if let icon {
+            icon.draw(in: NSRect(x: 0, y: (rect.height - icon.size.height) / 2, width: icon.size.width, height: icon.size.height))
+        }
+        title.draw(at: NSPoint(x: iconWidth, y: 0))
+        return true
+    }
+    image.isTemplate = true
+    return image
+}
+
 @MainActor
-final class App: NSObject, NSApplicationDelegate {
-    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    let monitor = Monitor()
-    lazy var host = NSHostingView(rootView: Dashboard(monitor: monitor))
-    var timer: Timer?
-
-    func applicationDidFinishLaunching(_: Notification) {
-        let menu = NSMenu()
-        let dashboard = NSMenuItem()
-        dashboard.view = host
-        menu.addItem(dashboard)
-        menu.addItem(.separator())
-        menu.addItem(loginItem)
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        menu.delegate = self
-        item.menu = menu
-
-        registerLoginItemOnce()
-        refresh()
-        // .common so it keeps updating while the menu is open. Timers fire on the main thread; a Task would wait
-        // until the menu closes.
-        let timer = Timer(timeInterval: 2.0, repeats: true) { _ in
-            MainActor.assumeIsolated { self.refresh() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
-    }
-
-    func refresh() {
-        monitor.update(readBattery())
-        host.frame.size = host.fittingSize
-        guard let r = monitor.reading else {
-            setStatus("—", symbol: nil)
-            return
-        }
-        let watts = Int(r.headlineWatts.rounded())
-        setStatus("\(watts)W", symbol: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : nil)
-    }
-
-    private func setStatus(_ text: String, symbol: String?) {
-        guard let button = item.button else { return }
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.menuBarFont(ofSize: 11),
-            .foregroundColor: NSColor.labelColor
-        ]
-        let attributed = NSAttributedString(string: text, attributes: attrs)
-        button.attributedTitle = attributed
-        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
-        button.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil)?.withSymbolConfiguration(config) }
-        button.imagePosition = .imageLeading
-        let imageWidth = button.image.map { $0.size.width + 2 } ?? 0
-        item.length = ceil(attributed.size().width + imageWidth) + 6
-    }
-
-    private lazy var loginItem: NSMenuItem = {
-        let it = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
-        it.target = self
-        return it
-    }()
+final class LoginItem: ObservableObject {
+    @Published var enabled = SMAppService.mainApp.status == .enabled
 
     // Opens at login by default, the first time the app runs, so turning it off sticks.
-    private func registerLoginItemOnce() {
+    func registerOnce() {
         guard !UserDefaults.standard.bool(forKey: "loginItemRegistered") else { return }
         UserDefaults.standard.set(true, forKey: "loginItemRegistered")
         try? SMAppService.mainApp.register()
+        enabled = SMAppService.mainApp.status == .enabled
     }
 
-    @objc private func toggleOpenAtLogin() {
+    func set(_ on: Bool) {
         do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
             let alert = NSAlert()
             alert.messageText = "Couldn't change Open at Login"
@@ -208,19 +167,40 @@ final class App: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }
+        enabled = SMAppService.mainApp.status == .enabled
     }
 }
 
-extension App: NSMenuDelegate {
-    func menuWillOpen(_: NSMenu) {
-        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+@MainActor
+func showAbout() {
+    let credits = NSMutableAttributedString(string: "Shows the live wattage your Mac is drawing, from its charger or its battery.\n\n")
+    credits.append(NSAttributedString(string: "Fork on GitHub", attributes: [.link: URL(string: "https://github.com/benlumley/wattusb")!]))
+    credits.append(NSAttributedString(string: "  ·  "))
+    credits.append(NSAttributedString(string: "Made with ⚡ by Ben", attributes: [.link: URL(string: "https://www.interokedigital.co.uk")!]))
+    let style = NSMutableParagraphStyle()
+    style.alignment = .center
+    credits.addAttributes([.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize), .paragraphStyle: style,
+                           .foregroundColor: NSColor.secondaryLabelColor],
+                          range: NSRange(location: 0, length: credits.length))
+    NSApp.activate(ignoringOtherApps: true)
+    // An empty build number keeps the panel from adding "(1)" after the version.
+    NSApp.orderFrontStandardAboutPanel(options: [.credits: credits, .version: ""])
+}
+
+// A window-style menu bar extra, like a panel, so the dashboard's gear can open a real menu of its own.
+struct WattUSB: App {
+    @StateObject private var monitor = Monitor()
+    @StateObject private var login = LoginItem()
+
+    var body: some Scene {
+        MenuBarExtra {
+            Dashboard(monitor: monitor, login: login)
+        } label: {
+            Image(nsImage: monitor.statusImage)
+                .onAppear { login.registerOnce() }
+        }
+        .menuBarExtraStyle(.window)
     }
 }
 
-MainActor.assumeIsolated {
-    let app = NSApplication.shared
-    let delegate = App()
-    app.delegate = delegate
-    app.setActivationPolicy(.accessory)
-    app.run()
-}
+WattUSB.main()

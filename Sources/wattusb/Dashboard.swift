@@ -18,11 +18,11 @@ extension Reading {
         let deviceColors: [Color] = [.purple, .pink, .teal]
         let toDevices = devices.map { d in
             Part(name: "Port \(d.port)", watts: d.watts * scale, color: deviceColors[max(0, d.port - 1) % deviceColors.count],
-                 help: String(format: "Something on port %d is drawing %.1fV · %.2fA", d.port, d.volts, d.amps))
+                 help: String(format: "%.1fV · %.2fA", d.volts, d.amps))
         }
         let toMac = total - toBattery - toDevices.reduce(0) { $0 + $1.watts }
-        return [Part(name: "Mac", watts: toMac, color: .blue, help: "What the Mac itself is using")]
-            + (plugged ? [Part(name: "Battery", watts: toBattery, color: .green, help: "Charging the battery")] : [])
+        return [Part(name: "Mac", watts: toMac, color: .blue, help: "")]
+            + (plugged ? [Part(name: "Battery", watts: toBattery, color: .green, help: "")] : [])
             + toDevices
     }
 }
@@ -41,6 +41,23 @@ final class Monitor: ObservableObject {
     @Published var reading: Reading?
     @Published var history: [Sample] = []
     let window: TimeInterval = 5 * 60
+    private var timer: Timer?
+
+    init() {
+        update(readBattery())
+        // .common so it keeps updating while the panel is open. Timers fire on the main thread; a Task would wait
+        // until it closes.
+        let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.update(readBattery()) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    var statusImage: NSImage {
+        guard let r = reading else { return wattusb.statusImage("—", symbol: nil) }
+        return wattusb.statusImage("\(Int(r.headlineWatts.rounded()))W", symbol: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : nil)
+    }
 
     func update(_ r: Reading?) {
         reading = r
@@ -72,6 +89,8 @@ enum Load {
         }
     }
 
+    var shortLabel: String { String(label.dropLast(" load".count)) }
+
     var color: Color {
         switch self {
         case .light: .green
@@ -84,6 +103,7 @@ enum Load {
 
 struct Dashboard: View {
     @ObservedObject var monitor: Monitor
+    @ObservedObject var login: LoginItem
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -94,10 +114,11 @@ struct Dashboard: View {
                 Text("No battery data").foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 6)
-        .padding(.bottom, 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .frame(width: 320)
+        // The material real menus use, like other menu bar apps' panels.
+        .background(MenuMaterial().ignoresSafeArea())
     }
 
     private func header(_ r: Reading) -> some View {
@@ -106,38 +127,37 @@ struct Dashboard: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : "battery.75percent")
-                    .frame(width: 16)
+                    .foregroundStyle(.secondary)
                 header(state: r).help(batteryDetails(r))
-                Spacer()
-                Text(load.label)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(load.color.opacity(0.2), in: Capsule())
-                    .foregroundStyle(load.color)
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.secondary)
-            HStack(alignment: .lastTextBaseline) {
-                (Text("\(Int(watts.rounded()))")
-                    .font(.system(size: 40, weight: .semibold, design: .rounded))
-                    + Text("W")
-                    .font(.system(size: 20, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary))
-                    .monospacedDigit()
-                Spacer()
-                // Reads on from the big number: "44W from 60W charger", "13W from battery".
-                Group {
-                    if r.connecting {
-                        label("Mac usage")
-                    } else if r.plugged {
-                        let headroom = r.adapterWatts > 0 ? r.drawWatts / Double(r.adapterWatts) : 0
-                        label("from ") + value("\(r.adapterWatts)W", color: headroom > 0.9 ? .orange : .primary) + label(" charger")
-                    } else {
-                        label("from battery")
+                Spacer(minLength: 8)
+                // Sized and spaced like Proton VPN Menu Bar's.
+                HStack(spacing: 10) {
+                    Menu {
+                        Toggle("Open at Login", isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
+                        Divider()
+                        Button("About wattusb") { showAbout() }
+                    } label: {
+                        Image(systemName: "gearshape")
                     }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain).pointingHand()
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Settings")
+                    Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
+                        .buttonStyle(.plain).pointingHand()
+                        .keyboardShortcut("q")
+                        .help("Quit (⌘Q)")
                 }
-                .font(.caption)
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+            }
+            .font(.body)
+            .frame(height: 24)
+            // "Moderate load" drops to "Moderate" when the charger's wattage needs the room.
+            ViewThatFits(in: .horizontal) {
+                numberRow(r, watts: watts, load: load, pill: load.label)
+                numberRow(r, watts: watts, load: load, pill: load.shortLabel)
             }
             .help(breakdown(r))
             // The big number's descender space leaves too much of a gap above the chart.
@@ -145,8 +165,42 @@ struct Dashboard: View {
         }
     }
 
+    private func numberRow(_ r: Reading, watts: Double, load: Load, pill: String) -> some View {
+        HStack(alignment: .lastTextBaseline) {
+            (Text("\(Int(watts.rounded()))")
+                .font(.system(size: 40, weight: .semibold, design: .rounded))
+                + Text("W")
+                .font(.system(size: 20, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary))
+                .monospacedDigit()
+            Text(pill)
+                .font(.callout.weight(.semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(load.color.opacity(0.2), in: Capsule())
+                .foregroundStyle(load.color)
+                .fixedSize()
+                .alignmentGuide(.lastTextBaseline) { $0[.bottom] - 4 }
+            Spacer(minLength: 8)
+            // Reads on from the big number: "44W of 60W charger", "13W from battery".
+            Group {
+                if r.connecting {
+                    label("Mac usage")
+                } else if r.plugged {
+                    let headroom = r.adapterWatts > 0 ? r.drawWatts / Double(r.adapterWatts) : 0
+                    label("of ") + value("\(r.adapterWatts)W", color: headroom > 0.9 ? .orange : .primary) + label(" charger")
+                } else {
+                    label("from battery")
+                }
+            }
+            .font(.callout)
+            .fixedSize()
+        }
+    }
+
     // Always the battery level first; the icon already says whether it's charging or on battery.
     private func header(state r: Reading) -> Text {
+        if r.plugged && r.fullyCharged { return label("Battery ") + value("full") + label(" · on charger") }
         let percent = label("Battery ") + value("\(r.batteryPercent)%")
         let minutes = r.timeToFullMinutes > 0 && r.timeToFullMinutes < 60 * 24 ? r.timeToFullMinutes : 0
         if !r.plugged {
@@ -156,7 +210,8 @@ struct Dashboard: View {
         if r.charging {
             return minutes > 0 ? percent + label(" · ") + value(formatTime(minutes)) + label(" to full") : percent
         }
-        return percent + label(r.fullyCharged ? " · charged" : " · not charging")
+        // Plugged in but held below full, usually by Optimized Battery Charging.
+        return percent + label(" · on hold")
     }
 
     private func chart(_ r: Reading) -> some View {
@@ -204,17 +259,25 @@ struct Dashboard: View {
                     AxisValueLabel { if let w = value.as(Double.self), w > 0 { Text("\(Int(w))W") } }
                 }
             }
-            .frame(height: 70)
+            .frame(height: 100)
             let items: [AnyView] = [AnyView(swatch(.blue, "Mac", now.first?.watts ?? 0)
-                .help("What the Mac itself is using, peaking at \(Int(peak.rounded()))W in the last 5 minutes"))]
+                .help("Peak \(Int(peak.rounded()))W"))]
                 + others.map { part in
                     let current = now.first { $0.name == part.name }
                     return AnyView(swatch(part.color, part.name, current?.watts ?? 0).help(current?.help ?? part.help))
                 }
-            HStack(spacing: 10) {
-                ForEach(items.indices, id: \.self) { items[$0].fixedSize() }
+            // One row, or two when there are too many devices to fit.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    ForEach(items.indices, id: \.self) { items[$0].fixedSize() }
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    let half = (items.count + 1) / 2
+                    HStack(spacing: 10) { ForEach(0..<half, id: \.self) { items[$0].fixedSize() } }
+                    HStack(spacing: 10) { ForEach(half..<items.count, id: \.self) { items[$0].fixedSize() } }
+                }
             }
-            .font(.caption)
+            .font(.callout)
         }
     }
 
@@ -243,10 +306,10 @@ struct Dashboard: View {
     private func breakdown(_ r: Reading) -> String {
         var lines: [String] = []
         if r.plugged && !r.connecting {
-            lines.append(String(format: "In: %.0fW (%.1fV · %.2fA), the dashed line", r.drawWatts, r.voltsIn, r.ampsIn))
-            lines.append(String(format: "Charger: %dW max (%.0fV · %.0fA PD)", r.adapterWatts, r.adapterVolts, r.adapterAmps))
+            lines.append(String(format: "In: %.0fW · %.1fV · %.2fA", r.drawWatts, r.voltsIn, r.ampsIn))
+            lines.append(String(format: "Charger: %dW · %.0fV · %.0fA", r.adapterWatts, r.adapterVolts, r.adapterAmps))
         } else if !r.plugged {
-            lines.append(String(format: "Drawing %.0fW from the battery", r.dischargeWatts))
+            lines.append(String(format: "Battery: %.0fW", r.dischargeWatts))
         }
         for part in r.parts {
             lines.append(String(format: "To %@: %.0fW", part.name == "Mac" ? "Mac" : part.name.lowercased(), part.watts))
@@ -256,7 +319,30 @@ struct Dashboard: View {
 
     // Health, cycles and temperature change over months, not minutes, so they live in the battery line's tooltip.
     private func batteryDetails(_ r: Reading) -> String {
-        String(format: "Health %d%%: holds that much of the charge it did when new (macOS recommends service below 80%%)\n"
-                   + "%d of the %d charge cycles it's rated for\n%.0f°C", r.healthPercent, r.cycles, r.designCycles, r.temperature)
+        String(format: "Health %d%%\n%d of %d cycles\n%.0f°C", r.healthPercent, r.cycles, r.designCycles, r.temperature)
+    }
+}
+
+// Behind-window blur with the menu material, which is darker than a MenuBarExtra window's own.
+struct MenuMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .menu
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+extension View {
+    // A pointing hand over anything clickable, as on a web page.
+    @ViewBuilder func pointingHand() -> some View {
+        if #available(macOS 15, *) {
+            pointerStyle(.link)
+        } else {
+            onHover { inside in inside ? NSCursor.pointingHand.push() : NSCursor.pop() }
+        }
     }
 }
