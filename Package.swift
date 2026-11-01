@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "wattusb",
             path: "Sources/wattusb",
-            exclude: ["Info.plist"]
+            exclude: ["Info.plist", "AppIcon.icns"]
         )
     ]
 )

@@ -8,6 +8,8 @@ rm -rf wattusb.app
 mkdir -p wattusb.app/Contents/MacOS
 cp .build/apple/Products/Release/wattusb wattusb.app/Contents/MacOS/
 cp Sources/wattusb/Info.plist wattusb.app/Contents/
+mkdir -p wattusb.app/Contents/Resources
+cp Sources/wattusb/AppIcon.icns wattusb.app/Contents/Resources/
 
 # Release builds stamp the version; local builds keep Info.plist as committed.
 if [ -n "${VERSION:-}" ]; then
