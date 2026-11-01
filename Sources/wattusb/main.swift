@@ -208,6 +208,7 @@ struct WattUSB: App {
                     login.registerOnce()
                     // Touches the shortcuts so the panel's is registered at launch, not when the panel first opens.
                     shortcuts.register()
+                    closePanelWhenInactive()
                 }
         }
         .menuBarExtraStyle(.window)

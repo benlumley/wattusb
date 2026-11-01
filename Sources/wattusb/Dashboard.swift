@@ -116,6 +116,7 @@ struct Dashboard: View {
     @ObservedObject var shortcuts: Shortcuts
     @State private var showHints = false
     @State private var flagsMonitor: Any?
+    @State private var keyMonitor: Any?
     // The time under the pointer on the chart, whose sample the numbers show instead of the live ones.
     @State private var hovered: Date?
 
@@ -140,14 +141,23 @@ struct Dashboard: View {
         .background(MenuMaterial().ignoresSafeArea())
         .environment(\.shortcutHints, showHints)
         .onAppear {
+            // Esc closes it, like a menu.
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                guard event.keyCode == 53, NSApp.keyWindow?.className.contains("MenuBarExtraWindow") == true else { return event }
+                closePanel()
+                return nil
+            }
             // Holding ⌘ on its own shows the shortcuts.
             flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
                 showHints = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
                 return event
             }
+            // Nothing starts focused, like Proton's panel, rather than the gear keeping its ring from last time.
+            DispatchQueue.main.async { NSApp.keyWindow?.makeFirstResponder(nil) }
         }
         .onDisappear {
-            if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
+            for monitor in [keyMonitor, flagsMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
+            keyMonitor = nil
             flagsMonitor = nil
             showHints = false
         }

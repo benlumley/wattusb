@@ -63,6 +63,27 @@ struct Shortcut: Codable, Equatable {
     statusButton()?.performClick(nil)
 }
 
+// Closes the panel, by clicking the menu bar item as you would, since closing the window itself leaves the item
+// highlighted.
+@MainActor func closePanel() {
+    statusButton()?.performClick(nil)
+}
+
+// Closes the panel when another app comes to the front, e.g. one whose own panel was opened with a shortcut.
+// A click elsewhere closes it, but switching apps from the keyboard doesn't.
+private var inactiveObserver: Any?
+
+@MainActor func closePanelWhenInactive() {
+    guard inactiveObserver == nil else { return }
+    inactiveObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+        MainActor.assumeIsolated {
+            if NSApp.windows.contains(where: { $0.className.contains("MenuBarExtraWindow") && $0.isVisible }) {
+                closePanel()
+            }
+        }
+    }
+}
+
 // The menu bar item's button, which SwiftUI's MenuBarExtra doesn't expose.
 @MainActor private func statusButton() -> NSStatusBarButton? {
     func find(in view: NSView?) -> NSStatusBarButton? {
