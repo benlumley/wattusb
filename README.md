@@ -1,69 +1,48 @@
 # wattusb
 
-Tiny macOS menu bar app that shows the live wattage your Mac is currently drawing, from its USB-C / MagSafe charger when plugged in, or from the battery when not.
+[![Release](https://img.shields.io/github/v/release/benlumley/wattusb)](https://github.com/benlumley/wattusb/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/benlumley/wattusb/total)](https://github.com/benlumley/wattusb/releases)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](#install)
+[![License: MIT](https://img.shields.io/github/license/benlumley/wattusb)](LICENSE)
+
+Tiny macOS menu bar app that shows the live wattage your Mac is drawing, from its USB-C / MagSafe charger when plugged in, or from the battery when not. Click it for a live chart of where the power's going.
 
 **[benlumley.github.io/wattusb](https://benlumley.github.io/wattusb/)**
 
 <p align="center">
-  <b>Charging</b><br>
-  <img src="docs/menubar-charging.png" alt="wattusb showing 58W while charging" height="34">
-  &nbsp;&nbsp;
-  <img src="docs/dropdown-charging.png" alt="wattusb dropdown showing the charging power breakdown" height="120">
+  <img src="docs/panel-charging.png" alt="wattusb charging at 37W of a 60W charger: 11W to the Mac, 18W to the battery and 7W to a phone on port 2" width="380">
+  &nbsp;
+  <img src="docs/panel-battery.png" alt="wattusb on battery at 15W: 6W to the Mac and two devices charging off its ports" width="380">
 </p>
 
-<p align="center">
-  <b>On battery</b><br>
-  <img src="docs/menubar-battery.png" alt="wattusb showing 24W draw on battery" height="34">
-  &nbsp;&nbsp;
-  <img src="docs/dropdown-battery.png" alt="wattusb dropdown showing battery draw" height="100">
-</p>
+## Features
+
+- ⚡ **Live watts in the menu bar**, from the charger or the battery.
+- 📈 **A live chart** of the last 5 minutes. Hover to scrub back.
+- 🔌 **Where the power goes**: the Mac, the battery, and each device on its ports.
+- 🔋 **Charger and battery details**: volts, amps, time left and health.
+- 🪶 **Featherweight and private**: no dock icon, no network, no telemetry.
 
 Useful for:
 
 - Telling whether a given charger is actually delivering its rated power.
 - Comparing ports on multi-port chargers (the "fast" port vs the slower ones).
 - Sanity-checking cables: a flaky cable will cap the negotiated voltage and the wattage drops accordingly.
-- Seeing how much power your Mac is sipping when running on battery.
+- Seeing how much power your Mac, and anything plugged into it, is using on battery.
 
 ## What it shows
 
-**Menu bar**: a single number, e.g. `58W`.
+**Menu bar**: the total, e.g. `⚡ 37W`.
 
-- **Plugged in**: total watts coming in from the charger.
-- **On battery**: watts being drawn from the cells (i.e. what your Mac is consuming right now).
+- **Plugged in**: watts coming in from the charger, with a bolt while charging and a plug once it's full or on hold.
+- **On battery**: watts coming out of the battery, i.e. what your Mac and its devices are using right now.
 
-**Click for details when plugged in**:
+**Click for the panel**:
 
-```
-In:          58W (19.5V · 2.98A)
-Adapter:     60W max (20V · 3A PD)
-To battery:  31W
-To system:   27W
-Battery:     88%  ·  1h 22m to full
-─────────
-✓ Open at Login
-Quit
-```
-
-- **In**: real-time watts flowing in from the charger.
-- **Adapter**: the PD contract the charger negotiated (its advertised max).
-- **To battery** / **To system**: how the input watts split between charging the cells and running the Mac.
-- **Battery**: current charge level, plus time-to-full when actively charging.
-
-**Click for details on battery**:
-
-```
-Drawing:     12W from battery
-Battery:     88%  ·  6h 30m left
-Not plugged in
-─────────
-✓ Open at Login
-Quit
-```
-
-Updates every 2 seconds.
-
-**Open at Login**: on by default the first time the app runs; untick it in the menu to turn it off.
+- **Battery**: level, and time to full or time left. Hover for health, cycles and temperature.
+- **The big number**: the same total, with the load and either "of 60W charger" or "from battery". Hover for the full breakdown: input volts and amps, the charger's PD contract, and each split.
+- **Chart**: the Mac, the battery and each device over the last 5 minutes, with the charger's input dashed. Hover to scrub back through it.
+- **Gear**: Open at Login, Keyboard Shortcuts and About.
 
 ## Install
 
@@ -95,9 +74,8 @@ mv wattusb.app /Applications/
 open /Applications/wattusb.app
 ```
 
-Requires macOS 14+ and Xcode command-line tools. The build script produces a
-universal binary (Apple Silicon + Intel) and ad-hoc signs it so Gatekeeper lets
-it launch.
+Requires macOS 14+ and Xcode. The build script produces a universal binary
+(Apple Silicon + Intel) and ad-hoc signs it so Gatekeeper lets it launch.
 
 ## CI and releases
 
@@ -131,21 +109,16 @@ Versioning is automatic and nothing is committed back:
 
 All data comes from IOKit's `AppleSmartBattery` service:
 
-- Live input draw: `PowerTelemetryData.SystemPowerIn` (mW from the adapter)
-- Input voltage / current: `SystemVoltageIn`, `SystemCurrentIn`
+- Live input draw: `PowerTelemetryData.SystemPowerIn` (mW from the adapter), with `SystemVoltageIn` and `SystemCurrentIn`
+- What the Mac itself is using: `PowerTelemetryData.SystemLoad`
 - PD contract: `AdapterDetails.Watts`, `AdapterVoltage`, `Current`
 - Battery side: `Voltage` × `Amperage` (signed: positive = charging, negative = discharging)
-- Battery level / time: `CurrentCapacity`, `TimeRemaining`
-- State flags: `ExternalConnected`, `IsCharging`
+- Devices charging off the Mac's ports: `PowerOutDetails`, per USB-C port
+- Battery level, time and health: `CurrentCapacity`, `TimeRemaining`, `NominalChargeCapacity` / `DesignCapacity`, `CycleCount`, `Temperature`
 
-No entitlements, no network, no launch agent (Open at Login uses `SMAppService.mainApp`). The whole app is one Swift file (~200 lines). It's an `LSUIElement` app so there's no dock icon and no main window.
-
-The status item title uses `NSFont.menuBarFont(ofSize: 11)` via `attributedTitle` to line up with the Control Center battery percentage.
-
-## Quit
-
-Click the menu bar item → Quit (or `⌘Q` while the menu is open).
+No entitlements, no network, no launch agent (Open at Login uses `SMAppService.mainApp`). The panel is SwiftUI with Swift Charts, and the
+panel shortcut is a Carbon hot key, so it needs no accessibility access. It's an `LSUIElement` app, so there's no dock icon.
 
 ## License
 
-MIT.
+MIT
