@@ -113,6 +113,13 @@ enum Load {
 struct Dashboard: View {
     @ObservedObject var monitor: Monitor
     @ObservedObject var login: LoginItem
+    // The time under the pointer on the chart, whose sample the numbers show instead of the live ones.
+    @State private var hovered: Date?
+
+    private var hoveredSample: Sample? {
+        guard let hovered else { return nil }
+        return monitor.history.min { abs($0.date.timeIntervalSince(hovered)) < abs($1.date.timeIntervalSince(hovered)) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -131,8 +138,9 @@ struct Dashboard: View {
     }
 
     private func header(_ r: Reading) -> some View {
-        let load = Load(r.usageWatts)
-        let watts = monitor.headlineWatts
+        let sample = hoveredSample
+        let load = Load(sample?.watts("Mac") ?? r.usageWatts)
+        let watts = sample.map { $0.input ?? $0.parts.reduce(0) { $0 + $1.watts } } ?? monitor.headlineWatts
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : "battery.75percent")
@@ -165,8 +173,8 @@ struct Dashboard: View {
             .frame(height: 24)
             // "Moderate load" drops to "Moderate" when the charger's wattage needs the room.
             ViewThatFits(in: .horizontal) {
-                numberRow(r, watts: watts, load: load, pill: load.label)
-                numberRow(r, watts: watts, load: load, pill: load.shortLabel)
+                numberRow(r, watts: watts, load: load, pill: load.label, at: sample?.date)
+                numberRow(r, watts: watts, load: load, pill: load.shortLabel, at: sample?.date)
             }
             .help(breakdown(r))
             // The big number's descender space leaves too much of a gap above the chart.
@@ -174,7 +182,7 @@ struct Dashboard: View {
         }
     }
 
-    private func numberRow(_ r: Reading, watts: Double, load: Load, pill: String) -> some View {
+    private func numberRow(_ r: Reading, watts: Double, load: Load, pill: String, at date: Date?) -> some View {
         HStack(alignment: .lastTextBaseline) {
             (Text("\(Int(watts.rounded()))")
                 .font(.system(size: 40, weight: .semibold, design: .rounded))
@@ -193,7 +201,9 @@ struct Dashboard: View {
             Spacer(minLength: 8)
             // Reads on from the big number: "44W of 60W charger", "13W from battery".
             Group {
-                if r.connecting {
+                if let date {
+                    value(formatAgo(Date().timeIntervalSince(date))) + label(" ago")
+                } else if r.connecting {
                     label("Mac usage")
                 } else if r.plugged {
                     let headroom = r.adapterWatts > 0 ? r.drawWatts / Double(r.adapterWatts) : 0
@@ -232,7 +242,7 @@ struct Dashboard: View {
         others.sort { ($0.name == "Battery" ? "" : $0.name) < ($1.name == "Battery" ? "" : $1.name) }
         // Skip anything that's sat at 0W the whole time, like the battery when it's full.
         others.removeAll { p in monitor.history.allSatisfy { ($0.watts(p.name) ?? 0) < 0.5 } }
-        let now = r.parts
+        let now = hoveredSample?.parts ?? r.parts
         return VStack(alignment: .leading, spacing: 6) {
             Chart {
                 ForEach(monitor.history) { s in
@@ -258,6 +268,23 @@ struct Dashboard: View {
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                             .interpolationMethod(.monotone)
                     }
+                }
+                if let s = hoveredSample {
+                    RuleMark(x: .value("Time", s.date)).foregroundStyle(Color.secondary.opacity(0.6)).lineStyle(StrokeStyle(lineWidth: 1))
+                }
+            }
+            .chartOverlay { proxy in
+                GeometryReader { geo in
+                    Rectangle().fill(.clear).contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let point):
+                                guard let plot = proxy.plotFrame else { return }
+                                hovered = proxy.value(atX: point.x - geo[plot].origin.x, as: Date.self)
+                            case .ended:
+                                hovered = nil
+                            }
+                        }
                 }
             }
             .chartXAxis(.hidden)

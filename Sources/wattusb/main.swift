@@ -126,6 +126,12 @@ func formatTime(_ minutes: Int) -> String {
     return "\(m)m"
 }
 
+// "40s", "2m 10s"
+func formatAgo(_ seconds: TimeInterval) -> String {
+    let s = Int(seconds.rounded())
+    return s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s"
+}
+
 // The menu bar title, drawn as an image since MenuBarExtra ignores fonts on its label. menuBarFont at 11pt lines up
 // with Control Center's battery percentage.
 func statusImage(_ text: String, symbol: String?) -> NSImage {
