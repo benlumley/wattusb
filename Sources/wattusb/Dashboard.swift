@@ -113,6 +113,9 @@ enum Load {
 struct Dashboard: View {
     @ObservedObject var monitor: Monitor
     @ObservedObject var login: LoginItem
+    @ObservedObject var shortcuts: Shortcuts
+    @State private var showHints = false
+    @State private var flagsMonitor: Any?
     // The time under the pointer on the chart, whose sample the numbers show instead of the live ones.
     @State private var hovered: Date?
 
@@ -135,6 +138,19 @@ struct Dashboard: View {
         .frame(width: 320)
         // The material real menus use, like other menu bar apps' panels.
         .background(MenuMaterial().ignoresSafeArea())
+        .environment(\.shortcutHints, showHints)
+        .onAppear {
+            // Holding ⌘ on its own shows the shortcuts.
+            flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+                showHints = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+                return event
+            }
+        }
+        .onDisappear {
+            if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
+            flagsMonitor = nil
+            showHints = false
+        }
     }
 
     private func header(_ r: Reading) -> some View {
@@ -151,6 +167,7 @@ struct Dashboard: View {
                 HStack(spacing: 10) {
                     Menu {
                         Toggle("Open at Login", isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
+                        Button("Keyboard Shortcuts…") { showShortcuts(shortcuts) }
                         Divider()
                         Button("About wattusb") { showAbout() }
                     } label: {
@@ -164,6 +181,7 @@ struct Dashboard: View {
                     Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
                         .buttonStyle(.plain).pointingHand()
                         .keyboardShortcut("q")
+                        .shortcutHint("Q")
                         .help("Quit (⌘Q)")
                 }
                 .font(.system(size: 14))

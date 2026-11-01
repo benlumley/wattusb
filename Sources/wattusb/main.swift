@@ -197,13 +197,18 @@ func showAbout() {
 struct WattUSB: App {
     @StateObject private var monitor = Monitor()
     @StateObject private var login = LoginItem()
+    @StateObject private var shortcuts = Shortcuts()
 
     var body: some Scene {
         MenuBarExtra {
-            Dashboard(monitor: monitor, login: login)
+            Dashboard(monitor: monitor, login: login, shortcuts: shortcuts)
         } label: {
             Image(nsImage: monitor.statusImage)
-                .onAppear { login.registerOnce() }
+                .onAppear {
+                    login.registerOnce()
+                    // Touches the shortcuts so the panel's is registered at launch, not when the panel first opens.
+                    shortcuts.register()
+                }
         }
         .menuBarExtraStyle(.window)
     }
