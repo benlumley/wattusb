@@ -42,6 +42,14 @@ final class Monitor: ObservableObject {
     @Published var history: [Sample] = []
     let window: TimeInterval = 5 * 60
     private var timer: Timer?
+    private var lastWatts: Double = 0
+
+    // Just after unplugging, macOS reports no battery draw for a few seconds, so keep showing the last figure
+    // rather than 0W.
+    var headlineWatts: Double {
+        guard let r = reading else { return 0 }
+        return !r.plugged && r.headlineWatts == 0 ? lastWatts : r.headlineWatts
+    }
 
     init() {
         update(readBattery())
@@ -56,12 +64,13 @@ final class Monitor: ObservableObject {
 
     var statusImage: NSImage {
         guard let r = reading else { return wattusb.statusImage("—", symbol: nil) }
-        return wattusb.statusImage("\(Int(r.headlineWatts.rounded()))W", symbol: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : nil)
+        return wattusb.statusImage("\(Int(headlineWatts.rounded()))W", symbol: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : nil)
     }
 
     func update(_ r: Reading?) {
         reading = r
         guard let r else { return }
+        if r.headlineWatts > 0 { lastWatts = r.connecting ? r.usageWatts : r.plugged ? r.usageWatts + r.deviceWatts : r.headlineWatts }
         let now = Date()
         history.append(Sample(date: now, parts: r.connecting ? [] : r.parts, input: r.plugged && !r.connecting ? r.drawWatts : nil))
         history.removeAll { now.timeIntervalSince($0.date) > window }
@@ -123,7 +132,7 @@ struct Dashboard: View {
 
     private func header(_ r: Reading) -> some View {
         let load = Load(r.usageWatts)
-        let watts = r.headlineWatts
+        let watts = monitor.headlineWatts
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : "battery.75percent")
