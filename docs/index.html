@@ -6,7 +6,10 @@
 <title>wattusb: see your Mac's live USB-C charging wattage</title>
 <meta name="description" content="wattusb is a tiny, free macOS menu bar app that shows the live wattage your Mac is drawing from its USB-C charger. Instantly tell whether a charger or port is giving you good juice.">
 <meta name="author" content="Ben Lumley">
-<meta name="theme-color" content="#30c85e">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <link rel="canonical" href="https://benlumley.github.io/wattusb/">
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -71,6 +74,48 @@
     --term: #1d1d1f;
     --term-line: transparent;
     --shadow: rgba(0,0,0,0.13);
+    color-scheme: light;
+  }
+  /* Dark follows the system unless the toggle (or ⌘/Ctrl+E) picked a theme */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #f5f5f7;
+      --sub: #a1a1a6;
+      --line: #2a2a2d;
+      --line-hover: #48484a;
+      --bg: #111113;
+      --bg-alt: #161618;
+      --card: #1c1c1e;
+      --code: #2c2c2e;
+      --accent-deep: #3ddc6e;
+      --term: #1c1c1e;
+      --term-line: #2f2f32;
+      --shadow: rgba(0,0,0,0.5);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #f5f5f7;
+    --sub: #a1a1a6;
+    --line: #2a2a2d;
+    --line-hover: #48484a;
+    --bg: #111113;
+    --bg-alt: #161618;
+    --card: #1c1c1e;
+    --code: #2c2c2e;
+    --accent-deep: #3ddc6e;
+    --term: #1c1c1e;
+    --term-line: #2f2f32;
+    --shadow: rgba(0,0,0,0.5);
+    color-scheme: dark;
+  }
+  /* Each screenshot comes in both themes; show the one that matches */
+  .dark-only { display: none; }
+  :root[data-theme="dark"] .light-only { display: none; }
+  :root[data-theme="dark"] .dark-only { display: block; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .light-only { display: none; }
+    :root:not([data-theme="light"]) .dark-only { display: block; }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
@@ -93,6 +138,23 @@
     .github-corner:hover .octo-arm { animation: none; }
     .github-corner .octo-arm { animation: octowave 560ms ease-in-out; }
     .github-corner svg { width: 62px; height: 62px; }
+  }
+
+  /* theme toggle */
+  .theme {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    width: 40px; height: 40px; display: grid; place-items: center; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 50%; background: var(--card); color: var(--ink);
+    transition: border-color .15s, transform .12s;
+  }
+  .theme:hover { border-color: var(--line-hover); transform: translateY(-1px); }
+  .theme svg { width: 18px; height: 18px; }
+  .theme .sun { display: none; }
+  :root[data-theme="dark"] .theme .sun { display: block; }
+  :root[data-theme="dark"] .theme .moon { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme .sun { display: block; }
+    :root:not([data-theme="light"]) .theme .moon { display: none; }
   }
 
   /* hero */
@@ -210,6 +272,11 @@
     </svg>
   </a>
 
+  <button class="theme" id="theme" aria-label="Toggle dark mode">
+    <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+  </button>
+
   <header class="hero">
     <div class="wrap">
       <span class="badge"><span class="dot"></span> Live wattage in your menu bar</span>
@@ -240,12 +307,14 @@
         <div class="shot">
           <h3>Charging</h3>
           <span class="state">37W of a 60W charger, split three ways</span>
-          <img src="panel-charging.png" alt="wattusb charging at 37W of a 60W charger: 11W to the Mac, 18W to the battery and 7W to a phone on port 2">
+          <img class="light-only" src="panel-charging-light.png" alt="wattusb charging at 37W of a 60W charger: 11W to the Mac, 18W to the battery and 7W to a phone on port 2">
+          <img class="dark-only" src="panel-charging.png" alt="wattusb charging at 37W of a 60W charger: 11W to the Mac, 18W to the battery and 7W to a phone on port 2">
         </div>
         <div class="shot">
           <h3>On battery</h3>
           <span class="state">Everything your Mac and its devices are drawing</span>
-          <img src="panel-battery.png" alt="wattusb on battery at 15W: 6W to the Mac and two devices charging off its ports">
+          <img class="light-only" src="panel-battery-light.png" alt="wattusb on battery at 15W: 6W to the Mac and two devices charging off its ports">
+          <img class="dark-only" src="panel-battery.png" alt="wattusb on battery at 15W: 6W to the Mac and two devices charging off its ports">
         </div>
       </div>
     </div>
@@ -336,6 +405,27 @@
         btn.textContent = 'Copied'; btn.classList.add('done');
         setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1600);
       });
+    });
+
+    // Dark mode follows the system until toggled; picking the system's own theme clears the override
+    var root = document.documentElement;
+    var systemDark = matchMedia('(prefers-color-scheme: dark)');
+    var toggle = document.getElementById('theme');
+    var isDark = function () { return root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark' : systemDark.matches; };
+    var toggleTheme = function () {
+      var dark = !isDark();
+      dark === systemDark.matches ? root.removeAttribute('data-theme') : root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      try {
+        dark === systemDark.matches ? localStorage.removeItem('theme') : localStorage.setItem('theme', dark ? 'dark' : 'light');
+      } catch (e) {}
+    };
+    toggle.title = 'Toggle dark mode (' + (/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+') + 'E)';
+    toggle.addEventListener('click', toggleTheme);
+    document.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        toggleTheme();
+      }
     });
   </script>
 

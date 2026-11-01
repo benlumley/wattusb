@@ -10,9 +10,15 @@ Tiny macOS menu bar app that shows the live wattage your Mac is drawing, from it
 **[benlumley.github.io/wattusb](https://benlumley.github.io/wattusb/)**
 
 <p align="center">
-  <img src="docs/panel-charging.png" alt="wattusb charging at 37W of a 60W charger: 11W to the Mac, 18W to the battery and 7W to a phone on port 2" width="380">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/panel-charging.png">
+    <img src="docs/panel-charging-light.png" alt="wattusb charging at 37W of a 60W charger: 11W to the Mac, 18W to the battery and 7W to a phone on port 2" width="380">
+  </picture>
   &nbsp;
-  <img src="docs/panel-battery.png" alt="wattusb on battery at 15W: 6W to the Mac and two devices charging off its ports" width="380">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/panel-battery.png">
+    <img src="docs/panel-battery-light.png" alt="wattusb on battery at 15W: 6W to the Mac and two devices charging off its ports" width="380">
+  </picture>
 </p>
 
 ## Features
