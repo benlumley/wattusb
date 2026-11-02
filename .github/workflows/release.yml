@@ -19,6 +19,8 @@ permissions:
 jobs:
   qa:
     uses: ./.github/workflows/ci.yml
+    # For the Codecov upload, so main has coverage to compare pull requests against.
+    secrets: inherit
 
   release:
     name: Publish release

@@ -1,6 +1,7 @@
 # wattusb
 
 [![Release](https://img.shields.io/github/v/release/benlumley/wattusb)](https://github.com/benlumley/wattusb/releases/latest)
+[![Coverage](https://img.shields.io/codecov/c/github/benlumley/wattusb/main)](https://codecov.io/gh/benlumley/wattusb)
 [![Downloads](https://img.shields.io/github/downloads/benlumley/wattusb/total)](https://github.com/benlumley/wattusb/releases)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](#install)
 [![License: MIT](https://img.shields.io/github/license/benlumley/wattusb)](LICENSE)
@@ -83,10 +84,14 @@ open /Applications/wattusb.app
 Requires macOS 14+ and Xcode. The build script produces a universal binary
 (Apple Silicon + Intel) and ad-hoc signs it so Gatekeeper lets it launch.
 
+Run the tests with `swift test`. They cover all of the app's logic (reading the battery, splitting the power,
+load levels, shortcuts); the SwiftUI views and the wiring to macOS are left out of coverage in `codecov.yml`.
+
 ## CI and releases
 
 - **CI** (`.github/workflows/ci.yml`) runs on every pull request: ShellCheck and
-  actionlint, a `-warnings-as-errors` compile, the universal `build.sh` build, and
+  actionlint, the unit tests (`swift test`, with coverage sent to
+  [Codecov](https://codecov.io/gh/benlumley/wattusb)), a `-warnings-as-errors` compile, the universal `build.sh` build, and
   `scripts/verify-app.sh` (plist lint, both architectures present, valid ad-hoc
   signature, 5-second launch smoke test). The zipped app is attached to the run.
   The runner has no battery, so the smoke test only covers start-up and the

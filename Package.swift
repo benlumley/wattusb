@@ -9,6 +9,7 @@ let package = Package(
             name: "wattusb",
             path: "Sources/wattusb",
             exclude: ["Info.plist", "AppIcon.icns"]
-        )
+        ),
+        .testTarget(name: "wattusbTests", dependencies: ["wattusb"])
     ]
 )
