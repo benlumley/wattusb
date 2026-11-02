@@ -2,114 +2,6 @@ import AppKit
 import Charts
 import SwiftUI
 
-// One slice of where the power goes: into the battery, the Mac itself, or something charging off a port.
-struct Part {
-    let name: String
-    let watts: Double
-    let color: Color
-    let help: String
-}
-
-extension Reading {
-    var parts: [Part] {
-        let total = max(plugged ? drawWatts : dischargeWatts, 0.1)
-        let toBattery = plugged ? min(chargeWatts, total) : 0
-        let scale = deviceWatts > 0 ? min(1, (total - toBattery) / deviceWatts) : 0
-        let deviceColors: [Color] = [.purple, .pink, .teal]
-        let toDevices = devices.map { d in
-            Part(name: "Port \(d.port)", watts: d.watts * scale, color: deviceColors[max(0, d.port - 1) % deviceColors.count],
-                 help: String(format: "%.1fV · %.2fA", d.volts, d.amps))
-        }
-        let toMac = total - toBattery - toDevices.reduce(0) { $0 + $1.watts }
-        return [Part(name: "Mac", watts: toMac, color: .blue, help: "")]
-            + (plugged ? [Part(name: "Battery", watts: toBattery, color: .green, help: "")] : [])
-            + toDevices
-    }
-}
-
-struct Sample: Identifiable {
-    let id = UUID()
-    let date: Date
-    let parts: [Part]
-    let input: Double?    // charger watts, when plugged
-
-    func watts(_ name: String) -> Double? { parts.first { $0.name == name }?.watts }
-}
-
-@MainActor
-final class Monitor: ObservableObject {
-    @Published var reading: Reading?
-    @Published var history: [Sample] = []
-    let window: TimeInterval = 5 * 60
-    private var timer: Timer?
-    private var lastWatts: Double = 0
-
-    // Just after unplugging, macOS reports no battery draw for a few seconds, so keep showing the last figure
-    // rather than 0W.
-    var headlineWatts: Double {
-        guard let r = reading else { return 0 }
-        return !r.plugged && r.headlineWatts == 0 ? lastWatts : r.headlineWatts
-    }
-
-    init() {
-        update(readBattery())
-        // .common so it keeps updating while the panel is open. Timers fire on the main thread; a Task would wait
-        // until it closes.
-        let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.update(readBattery()) }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
-    }
-
-    var statusImage: NSImage {
-        guard let r = reading else { return wattusb.statusImage("—", symbol: nil) }
-        return wattusb.statusImage("\(Int(headlineWatts.rounded()))W", symbol: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : nil)
-    }
-
-    func update(_ r: Reading?) {
-        reading = r
-        guard let r else { return }
-        if r.headlineWatts > 0 { lastWatts = r.connecting ? r.usageWatts : r.plugged ? r.usageWatts + r.deviceWatts : r.headlineWatts }
-        let now = Date()
-        history.append(Sample(date: now, parts: r.connecting ? [] : r.parts, input: r.plugged && !r.connecting ? r.drawWatts : nil))
-        history.removeAll { now.timeIntervalSince($0.date) > window }
-    }
-}
-
-enum Load {
-    case light, moderate, heavy, veryHeavy
-
-    init(_ watts: Double) {
-        switch watts {
-        case ..<8: self = .light
-        case ..<20: self = .moderate
-        case ..<35: self = .heavy
-        default: self = .veryHeavy
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .light: "Light load"
-        case .moderate: "Moderate load"
-        case .heavy: "Heavy load"
-        case .veryHeavy: "Very heavy load"
-        }
-    }
-
-    var shortLabel: String { String(label.dropLast(" load".count)) }
-
-    var color: Color {
-        switch self {
-        case .light: .green
-        case .moderate: Color(nsColor: NSColor(name: nil) { $0.name == .darkAqua ? .systemYellow : NSColor(red: 0.8, green: 0.6, blue: 0, alpha: 1) })
-        case .heavy: .orange
-        case .veryHeavy: .red
-        }
-    }
-}
-
 struct Dashboard: View {
     @ObservedObject var monitor: Monitor
     @ObservedObject var login: LoginItem
@@ -171,7 +63,7 @@ struct Dashboard: View {
             HStack(spacing: 6) {
                 Image(systemName: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : "battery.75percent")
                     .foregroundStyle(.secondary)
-                header(state: r).help(batteryDetails(r))
+                header(state: r).help(r.details)
                 Spacer(minLength: 8)
                 // Sized and spaced like Proton VPN Menu Bar's.
                 HStack(spacing: 10) {
@@ -204,7 +96,7 @@ struct Dashboard: View {
                 numberRow(r, watts: watts, load: load, pill: load.label, at: sample?.date)
                 numberRow(r, watts: watts, load: load, pill: load.shortLabel, at: sample?.date)
             }
-            .help(breakdown(r))
+            .help(r.breakdown)
             // The big number's descender space leaves too much of a gap above the chart.
             .padding(.bottom, -2)
         }
@@ -366,25 +258,6 @@ struct Dashboard: View {
         Text(s).foregroundColor(.secondary)
     }
 
-    // Everything the original menu showed, for the big number's tooltip.
-    private func breakdown(_ r: Reading) -> String {
-        var lines: [String] = []
-        if r.plugged && !r.connecting {
-            lines.append(String(format: "In: %.0fW · %.1fV · %.2fA", r.drawWatts, r.voltsIn, r.ampsIn))
-            lines.append(String(format: "Charger: %dW · %.0fV · %.0fA", r.adapterWatts, r.adapterVolts, r.adapterAmps))
-        } else if !r.plugged {
-            lines.append(String(format: "Battery: %.0fW", r.dischargeWatts))
-        }
-        for part in r.parts {
-            lines.append(String(format: "To %@: %.0fW", part.name == "Mac" ? "Mac" : part.name.lowercased(), part.watts))
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    // Health, cycles and temperature change over months, not minutes, so they live in the battery line's tooltip.
-    private func batteryDetails(_ r: Reading) -> String {
-        String(format: "Health %d%%\n%d of %d cycles\n%.0f°C", r.healthPercent, r.cycles, r.designCycles, r.temperature)
-    }
 }
 
 // Behind-window blur with the menu material, which is darker than a MenuBarExtra window's own.
