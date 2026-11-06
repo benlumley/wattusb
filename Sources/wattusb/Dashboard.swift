@@ -33,6 +33,7 @@ struct Dashboard: View {
         .background(MenuMaterial().ignoresSafeArea())
         .environment(\.shortcutHints, showHints)
         .onAppear {
+            monitor.panelOpen = true
             // Esc closes it, like a menu.
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 guard event.keyCode == 53, NSApp.keyWindow?.className.contains("MenuBarExtraWindow") == true else { return event }
@@ -48,6 +49,7 @@ struct Dashboard: View {
             DispatchQueue.main.async { NSApp.keyWindow?.makeFirstResponder(nil) }
         }
         .onDisappear {
+            monitor.panelOpen = false
             for monitor in [keyMonitor, flagsMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
             keyMonitor = nil
             flagsMonitor = nil

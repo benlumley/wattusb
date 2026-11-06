@@ -55,7 +55,7 @@ struct WattUSB: App {
         MenuBarExtra {
             Dashboard(monitor: monitor, login: login, shortcuts: shortcuts)
         } label: {
-            Image(nsImage: monitor.statusImage)
+            MenuBarLabel(title: monitor.title)
                 .onAppear {
                     login.registerOnce()
                     // Touches the shortcuts so the panel's is registered at launch, not when the panel first opens.
@@ -64,6 +64,15 @@ struct WattUSB: App {
                 }
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+// Watches just the title, so the menu bar updates while the panel is closed.
+private struct MenuBarLabel: View {
+    @ObservedObject var title: MenuBarTitle
+
+    var body: some View {
+        Image(nsImage: title.image)
     }
 }
 

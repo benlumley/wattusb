@@ -31,10 +31,31 @@ struct Sample: Identifiable {
     func watts(_ name: String) -> Double? { parts.first { $0.name == name }?.watts }
 }
 
+// The menu bar title, apart from the Monitor so it can update without redrawing the panel.
+@MainActor
+final class MenuBarTitle: ObservableObject {
+    @Published private(set) var image = statusImage("—", symbol: nil)
+    private var shown = "—"
+
+    // Only redraws the menu bar when the title changes, not on every reading.
+    func show(_ text: String, symbol: String?) {
+        let title = text + (symbol ?? "")
+        guard title != shown else { return }
+        shown = title
+        image = statusImage(text, symbol: symbol)
+    }
+}
+
 @MainActor
 final class Monitor: ObservableObject {
-    @Published var reading: Reading?
-    @Published var history: [Sample] = []
+    // Not @Published: the panel only redraws while it's open, since once opened, SwiftUI keeps laying out its chart
+    // behind the scenes every 2 seconds.
+    var reading: Reading?
+    var history: [Sample] = []
+    var panelOpen = false {
+        didSet { if panelOpen && !oldValue { objectWillChange.send() } }
+    }
+    let title = MenuBarTitle()
     let window: TimeInterval = 5 * 60
     private var timer: Timer?
     private var lastWatts: Double = 0
@@ -53,17 +74,23 @@ final class Monitor: ObservableObject {
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.update(read()) }
         }
+        // Lets macOS fire it alongside other wakeups, which saves more energy than the half second costs.
+        timer.tolerance = interval / 4
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
 
-    var statusImage: NSImage {
-        guard let r = reading else { return wattusb.statusImage("—", symbol: nil) }
-        return wattusb.statusImage("\(Int(headlineWatts.rounded()))W", symbol: r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : nil)
+    private var titleParts: (text: String, symbol: String?) {
+        guard let r = reading else { return ("—", nil) }
+        return ("\(Int(headlineWatts.rounded()))W", r.plugged ? (r.charging ? "bolt.fill" : "powerplug.fill") : nil)
     }
 
+    var statusImage: NSImage { wattusb.statusImage(titleParts.text, symbol: titleParts.symbol) }
+
     func update(_ r: Reading?) {
+        if panelOpen { objectWillChange.send() }
         reading = r
+        defer { title.show(titleParts.text, symbol: titleParts.symbol) }
         guard let r else { return }
         if r.headlineWatts > 0 { lastWatts = r.connecting ? r.usageWatts : r.plugged ? r.usageWatts + r.deviceWatts : r.headlineWatts }
         let now = Date()

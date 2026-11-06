@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import Testing
 @testable import wattusb
@@ -65,6 +66,48 @@ import Testing
         m.update(reading(discharge: 15))
         // The bolt or plug sits before the number; on battery there's none.
         #expect(charging > m.statusImage.size.width && m.statusImage.size.width > none)
+    }
+
+    @Test func updatesTheMenuBarTitleOnEveryReading() {
+        let m = Monitor(every: 3600) { nil }
+        let none = m.title.image.size.width
+        m.update(reading(plugged: true, charging: true, draw: 37))
+        #expect(m.title.image.size.width > none)
+        m.update(nil)
+        #expect(m.title.image.size.width == none)
+    }
+
+    @Test func onlyRedrawsTheMenuBarWhenTheTitleChanges() {
+        let m = Monitor(every: 3600) { nil }
+        var redraws = 0
+        let watching = m.title.objectWillChange.sink { redraws += 1 }
+        m.update(nil)
+        #expect(redraws == 0)
+        m.update(reading(plugged: true, charging: true, draw: 37))
+        m.update(reading(plugged: true, charging: true, draw: 37.2))
+        #expect(redraws == 1)
+        // The same number with a different icon.
+        m.update(reading(plugged: true, draw: 37))
+        #expect(redraws == 2)
+        watching.cancel()
+    }
+
+    @Test func onlyRedrawsThePanelWhileItsOpen() {
+        let m = Monitor(every: 3600) { nil }
+        var changes = 0
+        let watching = m.objectWillChange.sink { changes += 1 }
+        m.update(reading(discharge: 9))
+        #expect(changes == 0)
+        // Opening it catches up on what it missed.
+        m.panelOpen = true
+        m.panelOpen = true
+        #expect(changes == 1)
+        m.update(reading(discharge: 9))
+        #expect(changes == 2)
+        m.panelOpen = false
+        m.update(reading(discharge: 9))
+        #expect(changes == 2)
+        watching.cancel()
     }
 
     @Test func titleDrawsWithAndWithoutAnIcon() {
