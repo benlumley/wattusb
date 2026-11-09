@@ -25,6 +25,25 @@ jobs:
         # actionlint 1.7.12 predates the `concurrency.queue` key (May 2026).
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color -ignore 'unexpected key "queue"'
 
+  test:
+    name: Test
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test with coverage
+        run: swift test --enable-code-coverage
+      - name: Export coverage
+        run: |
+          bin=$(swift build --show-bin-path)
+          xcrun llvm-cov export -format=lcov -instr-profile "$bin/codecov/default.profdata" \
+            "$bin/wattusbPackageTests.xctest/Contents/MacOS/wattusbPackageTests" \
+            -ignore-filename-regex '(Tests|\.build)/' > coverage.lcov
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.lcov
+
   build:
     name: Build and verify app
     runs-on: macos-15

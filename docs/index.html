@@ -6,7 +6,10 @@
 <title>wattusb: see your Mac's live USB-C charging wattage</title>
 <meta name="description" content="wattusb is a tiny, free macOS menu bar app that shows the live wattage your Mac is drawing from its USB-C charger. Instantly tell whether a charger or port is giving you good juice.">
 <meta name="author" content="Ben Lumley">
-<meta name="theme-color" content="#30c85e">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <link rel="canonical" href="https://benlumley.github.io/wattusb/">
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -22,14 +25,14 @@
 <meta property="og:image" content="https://benlumley.github.io/wattusb/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="wattusb menu bar app showing 58W charging, with the brew install command">
+<meta property="og:image:alt" content="The wattusb panel charging at 37W of a 60W charger, with a live chart and the brew install command">
 <meta property="og:locale" content="en_GB">
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="wattusb: see your Mac's live charging wattage">
 <meta name="twitter:description" content="A tiny, free macOS menu bar app for USB-C charging power. See exactly how many watts your Mac is pulling.">
 <meta name="twitter:image" content="https://benlumley.github.io/wattusb/og.png">
-<meta name="twitter:image:alt" content="wattusb menu bar app showing 58W charging, with the brew install command">
+<meta name="twitter:image:alt" content="The wattusb panel charging at 37W of a 60W charger, with a live chart and the brew install command">
 
 <script type="application/ld+json">
 {
@@ -61,10 +64,58 @@
     --ink: #1d1d1f;
     --sub: #6e6e73;
     --line: #e6e6e9;
+    --line-hover: #cdcdd2;
     --bg: #ffffff;
+    --bg-alt: #fbfbfc;
+    --card: #ffffff;
+    --code: #f1f1f3;
     --accent: #30c85e;
     --accent-deep: #1a9d45;
     --term: #1d1d1f;
+    --term-line: transparent;
+    --shadow: rgba(0,0,0,0.13);
+    color-scheme: light;
+  }
+  /* Dark follows the system unless the toggle (or ⌘/Ctrl+E) picked a theme */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #f5f5f7;
+      --sub: #a1a1a6;
+      --line: #2a2a2d;
+      --line-hover: #48484a;
+      --bg: #111113;
+      --bg-alt: #161618;
+      --card: #1c1c1e;
+      --code: #2c2c2e;
+      --accent-deep: #3ddc6e;
+      --term: #1c1c1e;
+      --term-line: #2f2f32;
+      --shadow: rgba(0,0,0,0.5);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #f5f5f7;
+    --sub: #a1a1a6;
+    --line: #2a2a2d;
+    --line-hover: #48484a;
+    --bg: #111113;
+    --bg-alt: #161618;
+    --card: #1c1c1e;
+    --code: #2c2c2e;
+    --accent-deep: #3ddc6e;
+    --term: #1c1c1e;
+    --term-line: #2f2f32;
+    --shadow: rgba(0,0,0,0.5);
+    color-scheme: dark;
+  }
+  /* Each screenshot comes in both themes; show the one that matches */
+  .dark-only { display: none; }
+  :root[data-theme="dark"] .light-only { display: none; }
+  :root[data-theme="dark"] .dark-only { display: block; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .light-only { display: none; }
+    :root:not([data-theme="light"]) .dark-only { display: block; }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
@@ -80,7 +131,7 @@
 
   /* github corner */
   .github-corner { position: fixed; top: 0; right: 0; z-index: 10; }
-  .github-corner svg { fill: var(--ink); color: #fff; width: 76px; height: 76px; display: block; border: 0; }
+  .github-corner svg { fill: var(--ink); color: var(--bg); width: 76px; height: 76px; display: block; border: 0; }
   .github-corner:hover .octo-arm { animation: octowave 560ms ease-in-out; }
   @keyframes octowave { 0%,100%{transform:rotate(0)} 20%,60%{transform:rotate(-25deg)} 40%,80%{transform:rotate(10deg)} }
   @media (max-width: 500px) {
@@ -89,13 +140,30 @@
     .github-corner svg { width: 62px; height: 62px; }
   }
 
+  /* theme toggle */
+  .theme {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    width: 40px; height: 40px; display: grid; place-items: center; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 50%; background: var(--card); color: var(--ink);
+    transition: border-color .15s, transform .12s;
+  }
+  .theme:hover { border-color: var(--line-hover); transform: translateY(-1px); }
+  .theme svg { width: 18px; height: 18px; }
+  .theme .sun { display: none; }
+  :root[data-theme="dark"] .theme .sun { display: block; }
+  :root[data-theme="dark"] .theme .moon { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme .sun { display: block; }
+    :root:not([data-theme="light"]) .theme .moon { display: none; }
+  }
+
   /* hero */
   .hero {
     text-align: center;
     padding: 96px 0 64px;
     background:
-      radial-gradient(120% 90% at 50% -10%, rgba(48,200,94,0.10), rgba(255,255,255,0) 60%),
-      linear-gradient(#ffffff, #fbfbfc);
+      radial-gradient(120% 90% at 50% -10%, rgba(48,200,94,0.10), transparent 60%),
+      linear-gradient(var(--bg), var(--bg-alt));
     border-bottom: 1px solid var(--line);
   }
   .badge {
@@ -121,9 +189,10 @@
     background: var(--term); color: #f5f5f7;
     font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 14.5px;
     padding: 16px 16px 16px 20px; border-radius: 13px; text-align: left;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.16);
+    border: 1px solid var(--term-line); box-shadow: 0 10px 30px rgba(0,0,0,0.16);
   }
-  .term code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .term > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .term code { white-space: nowrap; }
   .term .prompt { color: var(--accent); user-select: none; }
   .copy {
     flex: none; cursor: pointer; border: 0; background: rgba(255,255,255,0.12); color: #f5f5f7;
@@ -134,12 +203,16 @@
   .cta-row { margin-top: 18px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
   .btn {
     text-decoration: none; font-size: 15px; font-weight: 560; padding: 11px 20px; border-radius: 11px;
-    border: 1px solid var(--line); color: var(--ink); background: #fff; transition: transform .12s, border-color .15s;
+    border: 1px solid var(--line); color: var(--ink); background: var(--card); transition: transform .12s, border-color .15s;
   }
-  .btn:hover { transform: translateY(-1px); border-color: #cdcdd2; }
-  .btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn { display: inline-flex; align-items: center; gap: 8px; }
+  .btn svg { width: 17px; height: 17px; flex: none; }
+  .btn:hover { transform: translateY(-1px); border-color: var(--line-hover); }
+  /* Dark enough for white text at 4.5:1 or better */
+  .btn.primary { background: #15803d; color: #fff; border-color: #15803d; font-weight: 620; }
+  .btn.primary:hover { background: #12722f; border-color: #12722f; }
   .hint { font-size: 13px; color: var(--sub); margin-top: 16px; }
-  .hint code { font-family: ui-monospace, "SF Mono", Menlo, monospace; background: #f1f1f3; padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+  .hint code { font-family: ui-monospace, "SF Mono", Menlo, monospace; background: var(--code); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
 
   /* sections */
   section { padding: 72px 0; }
@@ -150,18 +223,18 @@
   /* shots */
   .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
   .shot {
-    border: 1px solid var(--line); border-radius: 18px; padding: 26px; background: #fcfcfd;
+    border: 1px solid var(--line); border-radius: 18px; padding: 26px; background: var(--bg-alt);
     display: flex; flex-direction: column; align-items: center; gap: 18px;
   }
   .shot h3 { font-size: 17px; font-weight: 620; }
   .shot .state { font-size: 13px; color: var(--sub); font-weight: 500; }
-  .shot img { max-width: 100%; border-radius: 9px; box-shadow: 0 6px 22px rgba(0,0,0,0.13); }
+  .shot img { max-width: 100%; border-radius: 12px; box-shadow: 0 6px 22px var(--shadow); }
   .shot .bar { height: auto; }
 
   /* features */
-  .feat { background: #fbfbfc; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .feat { background: var(--bg-alt); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
-  .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 26px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 26px; }
   .card .ic { font-size: 22px; margin-bottom: 14px; display: block; }
   .card h3 { font-size: 17px; font-weight: 620; margin-bottom: 6px; letter-spacing: -0.01em; }
   .card p { font-size: 14.5px; color: var(--sub); }
@@ -171,7 +244,7 @@
   .how ul { list-style: none; }
   .how li { padding: 16px 0; border-bottom: 1px solid var(--line); font-size: 15.5px; color: var(--sub); }
   .how li b { color: var(--ink); font-weight: 600; }
-  .how code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; background: #f1f1f3; padding: 1px 6px; border-radius: 5px; color: var(--ink); }
+  .how code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; background: var(--code); padding: 1px 6px; border-radius: 5px; color: var(--ink); }
 
   footer { text-align: center; padding: 56px 0; border-top: 1px solid var(--line); color: var(--sub); font-size: 14px; }
   footer a { color: var(--accent-deep); text-decoration: none; font-weight: 560; }
@@ -182,6 +255,10 @@
     .tagline { font-size: 20px; }
     .shots, .grid { grid-template-columns: 1fr; }
     section { padding: 56px 0; }
+    /* Tighter buttons, so both fit on one line on phones */
+    .cta-row { gap: 8px; }
+    .btn { font-size: 14px; padding: 10px 13px; gap: 6px; }
+    .btn svg { width: 15px; height: 15px; }
   }
 </style>
 </head>
@@ -195,12 +272,17 @@
     </svg>
   </a>
 
+  <button class="theme" id="theme" aria-label="Toggle dark mode">
+    <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+  </button>
+
   <header class="hero">
     <div class="wrap">
       <span class="badge"><span class="dot"></span> Live wattage in your menu bar</span>
       <h1>watt<span class="w">usb</span></h1>
       <p class="tagline">See exactly how many watts your Mac is pulling.</p>
-      <p class="subline">A tiny macOS menu bar app for USB-C charging power. Instantly tell whether a charger, or which port on a multi-port charger, is actually giving you good juice.</p>
+      <p class="subline">A tiny macOS menu bar app for USB-C charging power. Instantly tell whether a charger, or which port on a multi-port charger, is actually giving you good juice, and see where every watt goes.</p>
 
       <div class="install">
         <div class="term">
@@ -208,8 +290,8 @@
           <button class="copy" id="copy" aria-label="Copy install command">Copy</button>
         </div>
         <div class="cta-row">
-          <a class="btn primary" href="https://github.com/benlumley/wattusb/releases/latest">Download .app</a>
-          <a class="btn" href="https://github.com/benlumley/wattusb">View on GitHub</a>
+          <a class="btn primary" href="https://github.com/benlumley/wattusb/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Download .app</a>
+          <a class="btn" href="https://github.com/benlumley/wattusb"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>View on GitHub</a>
         </div>
         <p class="hint">macOS 14+ · Universal (Apple Silicon + Intel). First launch: on macOS 15+, try to open the app, then click <b>Open Anyway</b> in System Settings → Privacy &amp; Security; on macOS 14, right-click it → <b>Open</b>. Or <code>xattr -dr com.apple.quarantine /Applications/wattusb.app</code></p>
       </div>
@@ -219,20 +301,20 @@
   <section>
     <div class="wrap">
       <p class="eyebrow">At a glance</p>
-      <h2>One number. The one that matters.</h2>
-      <p class="lead">The menu bar shows live watts. Click it for the full breakdown, whether you're plugged in or running on battery.</p>
+      <h2>One number. Then the whole story.</h2>
+      <p class="lead">The menu bar shows live watts. Click it for a live chart of where they're going: the Mac, the battery, and every device charging off your ports.</p>
       <div class="shots">
         <div class="shot">
           <h3>Charging</h3>
-          <span class="state">Total watts coming in from the charger</span>
-          <img class="bar" src="menubar-charging.png" alt="wattusb showing 58W in the menu bar while charging">
-          <img src="dropdown-charging.png" alt="Dropdown: 58W in, 60W adapter, 46W to battery, 12W to system, 56% battery">
+          <span class="state">37W of a 60W charger, split three ways</span>
+          <img class="light-only" src="panel-charging-light.png" alt="wattusb charging at 37W of a 60W charger: 11W to the Mac, 18W to the battery and 7W to a phone on port 2">
+          <img class="dark-only" src="panel-charging.png" alt="wattusb charging at 37W of a 60W charger: 11W to the Mac, 18W to the battery and 7W to a phone on port 2">
         </div>
         <div class="shot">
           <h3>On battery</h3>
-          <span class="state">Watts your Mac is drawing from the cells</span>
-          <img class="bar" src="menubar-battery.png" alt="wattusb showing 24W draw on battery">
-          <img src="dropdown-battery.png" alt="Dropdown: 21W from battery, 56% battery, 2h 9m left">
+          <span class="state">Everything your Mac and its devices are drawing</span>
+          <img class="light-only" src="panel-battery-light.png" alt="wattusb on battery at 15W: 6W to the Mac and two devices charging off its ports">
+          <img class="dark-only" src="panel-battery.png" alt="wattusb on battery at 15W: 6W to the Mac and two devices charging off its ports">
         </div>
       </div>
     </div>
@@ -240,39 +322,54 @@
 
   <section class="feat">
     <div class="wrap">
-      <p class="eyebrow">Why</p>
-      <h2>Built for one job</h2>
-      <p class="lead">No history graphs, no notifications, no settings. Just the number you wanted.</p>
+      <p class="eyebrow">Features</p>
+      <h2>Everything about your Mac's power</h2>
+      <p class="lead">Small enough to forget it's running. Detailed enough to settle any charger argument.</p>
       <div class="grid">
         <div class="card">
           <span class="ic">⚡</span>
-          <h3>Check your charger</h3>
-          <p>See if that charger is really delivering its rated power, or quietly throttling.</p>
+          <h3>Live watts</h3>
+          <p>From the charger or the battery, right in the menu bar, updated every 2 seconds.</p>
+        </div>
+        <div class="card">
+          <span class="ic">📈</span>
+          <h3>Live chart</h3>
+          <p>The last 5 minutes at a glance. Hover to scrub back and see the numbers at any moment.</p>
         </div>
         <div class="card">
           <span class="ic">🔌</span>
-          <h3>Compare ports</h3>
-          <p>Multi-port chargers split power unevenly. Find the fast hole, every time.</p>
+          <h3>Every device</h3>
+          <p>See the watts going to your Mac, into the battery, and out to each phone or gadget on its ports.</p>
+        </div>
+        <div class="card">
+          <span class="ic">🚦</span>
+          <h3>Load at a glance</h3>
+          <p>Light, moderate, heavy or very heavy, so you know when something's working your Mac hard.</p>
+        </div>
+        <div class="card">
+          <span class="ic">🧮</span>
+          <h3>Check your charger</h3>
+          <p>How much of its rated wattage you're using, and the voltage and current it actually negotiated.</p>
         </div>
         <div class="card">
           <span class="ic">🧵</span>
           <h3>Catch bad cables</h3>
-          <p>A flaky cable caps the negotiated voltage, and the wattage drops with it.</p>
+          <p>A flaky cable caps the negotiated voltage, and the wattage drops with it. Compare ports, too.</p>
         </div>
         <div class="card">
           <span class="ic">🔋</span>
-          <h3>Split the load</h3>
-          <p>See how input watts divide between charging the battery and running the Mac.</p>
+          <h3>Battery health</h3>
+          <p>Level and time to full or time left, with health, cycle count and temperature a hover away.</p>
         </div>
         <div class="card">
-          <span class="ic">🪶</span>
-          <h3>Featherweight</h3>
-          <p>One Swift file, ~0% idle CPU, under 30 MB RAM. No dock icon, no window.</p>
+          <span class="ic">⌨️</span>
+          <h3>Keyboard shortcuts</h3>
+          <p>Open it from any app with your own shortcut. Esc closes it, ⌘Q quits. Opens at login.</p>
         </div>
         <div class="card">
           <span class="ic">🔒</span>
-          <h3>Totally local</h3>
-          <p>Reads IOKit directly. No network, no telemetry, no entitlements. Open source.</p>
+          <h3>Featherweight and private</h3>
+          <p>Reads macOS's own battery data. No network, no telemetry, no dock icon. Open source.</p>
         </div>
       </div>
     </div>
@@ -287,7 +384,9 @@
         <li><b>Live input draw</b>: <code>PowerTelemetryData.SystemPowerIn</code>, the watts flowing in from the adapter.</li>
         <li><b>PD contract</b>: <code>AdapterDetails</code> gives the voltage/current the charger negotiated as its max.</li>
         <li><b>Battery side</b>: <code>Voltage × Amperage</code> reveals how much is actually reaching the cells.</li>
-        <li><b>Refresh</b>: every 2 seconds. The title uses the menu-bar font so it lines up with Control Center.</li>
+        <li><b>The Mac itself</b>: <code>PowerTelemetryData.SystemLoad</code>, whichever way the power's coming in.</li>
+        <li><b>Your devices</b>: <code>PowerOutDetails</code> reports the watts going out of each USB-C port.</li>
+        <li><b>Refresh</b>: every 2 seconds, kept for 5 minutes for the chart, drawn with Swift Charts.</li>
       </ul>
     </div>
   </section>
@@ -306,6 +405,27 @@
         btn.textContent = 'Copied'; btn.classList.add('done');
         setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1600);
       });
+    });
+
+    // Dark mode follows the system until toggled; picking the system's own theme clears the override
+    var root = document.documentElement;
+    var systemDark = matchMedia('(prefers-color-scheme: dark)');
+    var toggle = document.getElementById('theme');
+    var isDark = function () { return root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark' : systemDark.matches; };
+    var toggleTheme = function () {
+      var dark = !isDark();
+      dark === systemDark.matches ? root.removeAttribute('data-theme') : root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      try {
+        dark === systemDark.matches ? localStorage.removeItem('theme') : localStorage.setItem('theme', dark ? 'dark' : 'light');
+      } catch (e) {}
+    };
+    toggle.title = 'Toggle dark mode (' + (/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+') + 'E)';
+    toggle.addEventListener('click', toggleTheme);
+    document.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        toggleTheme();
+      }
     });
   </script>
 
